@@ -7,9 +7,9 @@ from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
 from typing import Any, Collection, Type, Union
 
-from value_based.policies import BaseEpsilonGreedyPolicy
-from value_based.strategy.learning import (BaseLearningStrategy, DQNLearningStrategy,
-                                           PrioritizedLearningStrategy)
+from rlalgs.value_based.policies import BaseEpsilonGreedyPolicy
+from rlalgs.value_based.strategy.learning import (BaseLearningStrategy, DQNLearningStrategy,
+                                                  PrioritizedLearningStrategy)
 from .model import BaseDQNModel
 from .replay import BaseBuffer, Experience
 from .strategy.estimate import (BaseEstimatorStrategy, DQNEstimatorStrategy,

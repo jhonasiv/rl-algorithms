@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from abc import ABC, abstractmethod
 
-from utils.functions import exponential_function
+from rlalgs.utils.functions import exponential_function
 
 
 @dataclass

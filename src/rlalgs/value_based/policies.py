@@ -6,7 +6,7 @@ from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
 from typing import Optional
 
-from utils.functions import casted_exponential_function, constant_decay_function
+from rlalgs.utils.functions import casted_exponential_function, constant_decay_function
 
 patch_typeguard()
 

@@ -5,12 +5,12 @@ from torchtyping import patch_typeguard
 from typeguard import typechecked
 from typing import Collection, Optional
 
-from value_based.beta_annealing import BaseBetaFunction
-from value_based.model import BaseDQNModel
-from value_based.policies import BasePolicy
-from value_based.replay import (BaseBuffer, BaseUpdateVariant, ConstantUpdateVariant, Experience,
-                                PrioritizedReplayBuffer, ReplayBuffer)
-from value_based.strategy.estimate import BaseEstimatorStrategy
+from rlalgs.value_based.beta_annealing import BaseBetaFunction
+from rlalgs.value_based.model import BaseDQNModel
+from rlalgs.value_based.policies import BasePolicy
+from rlalgs.value_based.replay import (BaseBuffer, BaseUpdateVariant, ConstantUpdateVariant, Experience,
+                                       PrioritizedReplayBuffer, ReplayBuffer)
+from rlalgs.value_based.strategy.estimate import BaseEstimatorStrategy
 
 patch_typeguard()
 

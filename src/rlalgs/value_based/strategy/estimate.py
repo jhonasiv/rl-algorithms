@@ -4,8 +4,8 @@ from torchtyping import TensorType
 from typeguard import typechecked
 from typing import Collection, Tuple
 
-from value_based.model import BaseDQNModel
-from value_based.policies import BasePolicy
+from rlalgs.value_based.model import BaseDQNModel
+from rlalgs.value_based.policies import BasePolicy
 
 
 class BaseEstimatorStrategy(ABC):

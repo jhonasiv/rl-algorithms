@@ -1,8 +1,7 @@
 # RL-Algorithms
 
-This project aims to provide an API for reinforcement learning algorithms.
-For now, this is only a small project I am working on to improve my knowledge about these reinforcement learning 
-algorithms.
+This repository contains my implementations of Deep Reinforcement Learning Algorithms.
+
 
 # Goal
 
@@ -13,7 +12,7 @@ They are presented below:
     - [x] ~~Deep Q-Networks~~
     - [x] ~~Dueling DQN~~
     - [x] ~~Double Q-Learning~~
-    - [x] ~~Prioritized Experience Replay~~
+    - [ ] Prioritized Experience Replay
     - [ ] Multi-step DQN
     - [ ] Noisy DQN
     - [ ] Distributional RL
@@ -22,7 +21,7 @@ They are presented below:
 
 # Installation
 
-I've built this project only on Linux machines for now.
+I've only tried building this project on Linux machines.
 
 ## Linux(Debian-based systems)
 
