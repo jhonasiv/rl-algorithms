@@ -2,11 +2,10 @@
 
 This repository contains my implementations of Deep Reinforcement Learning Algorithms.
 
-
 # Goal
 
-The goal of this project is to implement several reinforcement learning algorithms.
-They are presented below:
+The goal of this project is to implement several reinforcement learning algorithms. They are
+presented below:
 
 - Value-based methods
     - [x] ~~Deep Q-Networks~~
@@ -18,7 +17,6 @@ They are presented below:
     - [ ] Distributional RL
 - Policy-based methods
 
-
 # Installation
 
 I've only tried building this project on Linux machines.
@@ -26,8 +24,9 @@ I've only tried building this project on Linux machines.
 ## Linux(Debian-based systems)
 
 ```shell
-# Clone this repository
-git clone https://github.com/jhonasiv/rl-algorithms.git
-
-
+pip install -i https://test.pypi.org/simple/ rlalgs
 ```
+
+# Usage
+
+I will include some samples as soon as I get more algorithms implemented.
