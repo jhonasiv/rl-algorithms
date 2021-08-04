@@ -1,0 +1,6 @@
+numpy~=1.21.1
+torch~=1.9
+torchtyping~=0.1.4
+mlagents~=0.27.0
+setuptools~=44.0.0
+typeguard~=2.12.1
