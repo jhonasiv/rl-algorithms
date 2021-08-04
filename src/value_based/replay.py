@@ -1,13 +1,13 @@
+import random
+from abc import ABC, abstractmethod
 from collections import namedtuple
 from dataclasses import dataclass
+from typing import Any, Collection, Tuple
 
 import numpy as np
-import random
 import torch
-from abc import ABC, abstractmethod
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
-from typing import Any, Collection, Tuple
 
 Experience = namedtuple('Experience',
                         field_names=['state', 'action', 'reward', 'next_state', 'done'])
@@ -36,9 +36,38 @@ def unpack_samples(samples: np.ndarray, device: torch.device) -> Tuple[
 
 
 class BaseBuffer(ABC):
-    batch_size: int
-    memory: np.ndarray
-    device: torch.device
+    def __init__(self, batch_size, buffer_size, seed, device):
+        random.seed(seed)
+        self.batch_size = batch_size
+        self.buffer_size = buffer_size
+        
+        self.memory: np.ndarray = None
+        self.memory_pos = 0
+        self.buffer_length = 0
+        self.device = device
+        self.rng = np.random.Generator(np.random.PCG64(seed=seed))
+    
+    def _add_to_buffer(self, data: Collection[TensorType]) -> None:
+        data = [datum.to(self.device) for datum in data]
+        
+        data_batch = data[0].shape[0]
+        
+        memory_slice = self.memory_pos + data_batch
+        if memory_slice > self.buffer_size:
+            diff = self.buffer_size - self.memory_pos
+            self.memory[self.memory_pos:] = [dat for dat in zip(*(datum[:diff] for datum in data))]
+            
+            self.memory[:data_batch - diff] = [dat for dat in
+                                               zip(*(datum[diff:] for datum in data))]
+            
+            self.memory_pos = diff
+            self.buffer_length = self.buffer_size
+        
+        else:
+            self.memory[self.memory_pos:memory_slice] = [dat for dat in zip(*data)]
+            self.memory_pos = memory_slice % self.buffer_size
+            if self.buffer_length != self.buffer_size:
+                self.buffer_length = self.memory_pos
     
     @abstractmethod
     def add(self, state: TensorType[-1, -1], action: TensorType[-1, -1], reward: TensorType[-1, -1],
@@ -78,51 +107,16 @@ class ReplayBuffer(BaseBuffer):
         :param seed: random seed
         :param device: torch device
         """
-        super(ReplayBuffer, self).__init__()
-        random.seed(seed)
-        self.batch_size = batch_size
-        self.buffer_size = buffer_size
-        
-        self.memory_pos = 0
-        self.buffer_length = 0
+        super().__init__(batch_size, buffer_size, seed, device)
         self.memory = np.empty(buffer_size,
                                dtype=[("state", object), ("action", object), ("reward", object),
                                       ("next_state", object), ("done", object)])
-        self.device = device
-        self.rng = np.random.Generator(np.random.PCG64(seed=seed))
     
     @typechecked
     def add(self, state: TensorType["batch", -1], action: TensorType["batch", -1],
             reward: TensorType["batch", -1], next_state: TensorType["batch", -1],
             done: TensorType["batch", -1, torch.uint8]) -> None:
-        state = state.to(self.device)
-        action = action.to(self.device)
-        action = action.to(self.device)
-        reward = reward.to(self.device)
-        next_state = next_state.to(self.device)
-        done = done.to(self.device)
-        
-        memory_slice = self.memory_pos + state.shape[0]
-        if memory_slice > self.buffer_size:
-            diff = self.buffer_size - self.memory_pos
-            self.memory[self.memory_pos:] = [(s, a, r, ns, d) for s, a, r, ns, d in
-                                             zip(state[:diff], action[:diff], reward[:diff],
-                                                 next_state[:diff], done[:diff])]
-            
-            self.memory[:state.shape[0] - diff] = [(s, a, r, ns, d) for s, a, r, ns, d in
-                                                   zip(state[diff:], action[diff:], reward[diff:],
-                                                       next_state[diff:], done[diff:])]
-            
-            self.memory_pos = diff
-            self.buffer_length = self.buffer_size
-        
-        else:
-            self.memory[self.memory_pos:memory_slice] = [(s, a, r, ns, d) for s, a, r, ns, d in
-                                                         zip(state, action, reward, next_state,
-                                                             done)]
-            self.memory_pos = memory_slice % self.buffer_size
-            if self.buffer_length != self.buffer_size:
-                self.buffer_length = self.memory_pos
+        self._add_to_buffer((state, action, reward, next_state, done))
     
     @typechecked
     def sample(self) -> Tuple[
@@ -189,7 +183,7 @@ class PrioritizedReplayBuffer(BaseBuffer):
         :param alpha: prioritization exponent
         :param update_variant: priorities update method
         """
-        super(PrioritizedReplayBuffer, self).__init__()
+        super().__init__(batch_size, buffer_size, seed, device)
         self.update_variant = update_variant
         self.batch_size = batch_size
         self.buffer_size = buffer_size
@@ -197,36 +191,41 @@ class PrioritizedReplayBuffer(BaseBuffer):
         
         self.memory_pos = 0
         self.buffer_length = 0
-        self.memory = np.empty(buffer_size, dtype=[("priority", np.float), ("state", np.ndarray),
-                                                   ("action", torch.Tensor), ("reward", np.float),
-                                                   ("next_state", np.ndarray), ("done", np.uint8)])
+        self.memory = np.empty(buffer_size,
+                               dtype=[("priority", np.float32), ("state", torch.Tensor),
+                                      ("action", torch.Tensor), ("reward", torch.Tensor),
+                                      ("next_state", torch.Tensor), ("done", torch.Tensor)])
         self.rng = np.random.Generator(np.random.PCG64(seed=seed))
         
         self.alpha = alpha
         self.probabilities = torch.tensor([])
     
     @typechecked
-    def add(self, state: Collection[float], action: TensorType["action", "value"],
-            reward: np.float32, next_state: Collection[float], done: bool) -> None:
+    def add(self, state: TensorType["batch", -1], action: TensorType["batch", -1],
+            reward: TensorType["batch", -1], next_state: TensorType["batch", -1],
+            done: TensorType["batch", -1, torch.uint8]) -> None:
         if self.memory_pos != 0:
             priority = self.memory["priority"].max()
         else:
             priority = 1
         
-        self.memory[self.memory_pos] = (priority, state, action, reward, next_state, done)
-        self.memory_pos = (self.memory_pos + 1) % self.buffer_size
-        self.buffer_length = self.buffer_length + 1 if self.buffer_length < self.buffer_size else \
-            self.buffer_size
+        priority = torch.full_like(reward, priority)
+        self._add_to_buffer((priority, state, action, reward, next_state, done))
+        # self.memory[self.memory_pos] = (priority, state, action, reward, next_state, done)
+        # self.memory_pos = (self.memory_pos + 1) % self.buffer_size
+        # self.buffer_length = self.buffer_length + 1 if self.buffer_length < self.buffer_size
+        # else \
+        #     self.buffer_size
     
     @typechecked
     def sample(self) -> Tuple[
         TensorType["batch", -1], TensorType["batch", -1], TensorType["batch", -1], TensorType[
-            "batch", -1], TensorType["batch", -1], TensorType[-1, torch.int]]:
+            "batch", -1], TensorType["batch", -1], TensorType["batch", torch.long]]:
         p_i = torch.from_numpy(self.memory["priority"][:self.buffer_length].copy()) ** self.alpha
         self.probabilities = (p_i / torch.sum(p_i))
         
         samples_id = torch.from_numpy(
-                self.rng.choice(len(self), size=self.batch_size, p=self.probabilities,
+                self.rng.choice(len(self), size=self.batch_size, p=self.probabilities.numpy(),
                                 replace=False)).long()
         samples = self.memory[samples_id]
         
@@ -235,8 +234,8 @@ class PrioritizedReplayBuffer(BaseBuffer):
         return states, actions, rewards, next_states, dones, samples_id
     
     @typechecked
-    def calc_is_weight(self, samples_id: TensorType["ids", torch.int], beta: float) -> TensorType[
-        "weights", torch.float32]:
+    def calc_is_weight(self, samples_id: TensorType["batch", torch.long], beta: float) -> \
+            TensorType["batch", torch.float32]:
         """
         Calculate Importance-Sampling weights for bias correction
         :param beta: importance-sampling bias exponent
@@ -244,14 +243,13 @@ class PrioritizedReplayBuffer(BaseBuffer):
         :return: IS weights
         """
         sample_probabilities = self.probabilities[samples_id]
-        weights: torch.Tensor = ((1 / (len(self) * sample_probabilities)) ** beta).refine_names(
-                "weights")
+        weights: torch.Tensor = ((1 / (len(self) * sample_probabilities)) ** beta)
         weights /= weights.max()
         return weights.float().to(self.device)
     
     @typechecked
-    def update(self, loss: TensorType["loss", torch.float32],
-               samples_id: TensorType["ids", torch.int]) -> None:
+    def update(self, loss: TensorType[-1, torch.float32],
+               samples_id: TensorType[-1, torch.int]) -> None:
         """
         Update priorities for every experience
         
