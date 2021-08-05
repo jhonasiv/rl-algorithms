@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from copy import deepcopy
 
 import torch
-from abc import ABC, abstractmethod
 from torch import nn
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
@@ -31,7 +31,7 @@ class BaseDQNModel(nn.Module, ABC):
 
 
 class DQNModel(BaseDQNModel, ABC):
-    def __init__(self, sequential_model: nn.Sequential, seed: int = 0, ):
+    def __init__(self, sequential_model: nn.Sequential, device: torch.device, seed: int = 0):
         """
         DQNModel constructor.
         
@@ -41,14 +41,12 @@ class DQNModel(BaseDQNModel, ABC):
         """
         super(DQNModel, self).__init__()
         torch.manual_seed(seed)
-        self._model = sequential_model
+        self.device = device
+        self._model = sequential_model.to(device)
     
     @typechecked
-    def forward(self, x: TensorType["batch", -1]) -> TensorType["batch", -1, -1]:
-        for layer in self._model[:-1]:
-            x = layer(x)
-        x = self._model[-1](x)
-        x = x.refine_names("action", "value")
+    def forward(self, x: TensorType[..., "batch"]) -> TensorType[..., "batch"]:
+        x = self._model(x)
         return x
 
 
@@ -74,7 +72,7 @@ class DuelingDQNModel(BaseDQNModel, ABC):
         self._advantage_layers = advantage_sequential.to(device)
     
     @typechecked
-    def forward(self, x: TensorType["batch", -1]) -> TensorType["batch", -1, -1]:
+    def forward(self, x: TensorType[..., "batch"]) -> TensorType[..., "batch"]:
         x = self._hidden_layers(x)
         
         value = self._value_layers(x)

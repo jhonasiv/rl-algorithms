@@ -1,10 +1,10 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Optional
 
 import torch
-from abc import ABC, abstractmethod
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
-from typing import Optional
 
 from rlalgs.utils.functions import casted_exponential_function, constant_decay_function
 
@@ -72,9 +72,10 @@ class BasePolicy(ABC):
 
 class BaseEpsilonGreedyPolicy(BasePolicy, ABC):
     def __init__(self, epsilon: float, discrete: bool,
-                 action_boundaries: Optional[TensorType["action", "boundary"]] = None,
-                 noise: Optional[GaussianNoise] = None):
+                 action_boundaries: Optional[TensorType] = None,
+                 noise: Optional[GaussianNoise] = None, seed: int = 0):
         
+        torch.random.manual_seed(seed)
         self._epsilon = epsilon
         self._action_boundaries = action_boundaries
         self._discrete = discrete
@@ -83,23 +84,19 @@ class BaseEpsilonGreedyPolicy(BasePolicy, ABC):
                 "If policy is not discrete, a gaussian " "noise must be defined.")
     
     @typechecked
-    def exploit(self, action_values: TensorType["batch", "action", -1]) -> TensorType[
-        "batch", "action", -1]:
+    def exploit(self, action_values: TensorType["action": ..., "batch"]) -> TensorType[
+        ..., "batch"]:
         if self._discrete:
-            actions = torch.argmax(action_values, dim=2).unsqueeze(2)
+            actions = torch.argmax(action_values, dim=0)
             return actions
         else:
             return self._noise.step(action_values)
     
     @typechecked
-    def explore(self, action_values: TensorType["batch", "action", -1]) -> TensorType[
-        "batch", "action", -1]:
+    def explore(self, action_values: TensorType["action": ..., "batch"]) -> TensorType[
+        ..., "batch"]:
         if self._discrete:
-            result = torch.empty((*action_values.shape[:-1], 1))
-            for b, batch in enumerate(action_values):
-                for a, action in enumerate(batch):
-                    indexes = torch.multinomial(torch.arange(len(action)).float(), 1)
-                    result[b, a] = indexes
+            result = torch.randint(0, action_values.shape[0], size=action_values.shape[1:])
             return result
         else:
             return (self._action_boundaries[:, 1] - self._action_boundaries[:, 0]) * torch.rand(
@@ -123,7 +120,7 @@ class DecayEpsilonGreedy(BaseEpsilonGreedyPolicy):
     def __init__(self, epsilon: float, discrete: bool, epsilon_min: float,
                  epsilon_decay_rate: float,
                  action_boundaries: Optional[TensorType["action", "boundary"]] = None,
-                 noise: Optional[GaussianNoise] = None):
+                 noise: Optional[GaussianNoise] = None, seed: int = 0):
         """
         Epsilon greedy policy where
 
@@ -152,7 +149,7 @@ class ExponentialEpsilonGreedy(BaseEpsilonGreedyPolicy):
     
     def __init__(self, epsilon: float, discrete: bool, epsilon_min: float, exp_k: float,
                  exp_b: float, action_boundaries: Optional[TensorType["action", "boundary"]],
-                 noise: Optional[GaussianNoise]):
+                 noise: Optional[GaussianNoise], seed: int = 0):
         """
         Exponentially calculate epsilon, following this equation
         

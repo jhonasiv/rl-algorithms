@@ -1,11 +1,11 @@
-from dataclasses import dataclass, field
-
 import abc
+from dataclasses import dataclass, field
+from typing import Any, Collection, Type, Union
+
 import numpy as np
 import torch
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
-from typing import Any, Collection, Type, Union
 
 from rlalgs.value_based.policies import BaseEpsilonGreedyPolicy
 from rlalgs.value_based.strategy.learning import (BaseLearningStrategy, DQNLearningStrategy,
@@ -15,7 +15,6 @@ from .replay import BaseBuffer, Experience
 from .strategy.estimate import (BaseEstimatorStrategy, DQNEstimatorStrategy,
                                 DoubleDQNEstimatorStrategy)
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 patch_typeguard()
 
 
@@ -24,16 +23,13 @@ class BaseAgent(abc.ABC):
     """
     Base deep reinforcement learning agent.
     """
-    state_size: int  # size of each state in the state space
-    action_size: int  # size of the action space
-    # lr: float  # learning rate
     seed: int  # random seed
-    # buffer_size: int = int(1e5)  # experience memory buffer size
-    batch_size: int = 64  # experience memory batch size
+    device: torch.device  # torch device
     update_every: int = 4  # how often the target network is updated
     gamma: float = 0.99  # discount factor
     tau: float = 1e-3  # step-size for soft updating the target network
     time_step: int = field(init=False, default=0)  # current time step
+    batch_size: int = field(init=False, default=64)  # experience memory batch size
     q_local: BaseDQNModel = field(init=False, default=None)  # local/online network
     q_target: BaseDQNModel = field(init=False, default=None)  # target network
     estimation_strategy: BaseEstimatorStrategy = field(init=False,
@@ -136,7 +132,7 @@ class BaseAgent(abc.ABC):
         """
     
     @abc.abstractmethod
-    def act(self, state: TensorType[-1, -1, torch.float32], train: bool = True) -> Union[
+    def act(self, state: TensorType[..., "batch", torch.float32], train: bool = True) -> Union[
         int, float, torch.Tensor, np.ndarray]:
         """
         The agent acts following a epsilon-greedy policy.
@@ -166,9 +162,9 @@ class DQNetAgent(BaseAgent):
         super(DQNetAgent, self).__init__(**data)
     
     @typechecked
-    def step(self, states: TensorType["batch", -1], actions: TensorType["batch", -1],
-             rewards: TensorType["batch", -1], next_states: TensorType["batch", -1],
-             done: TensorType["batch", -1, torch.uint8]) -> None:  # Store experience in memory
+    def step(self, states: TensorType[..., "batch"], actions: TensorType[..., "batch"],
+             rewards: TensorType[..., "batch"], next_states: TensorType[..., "batch"],
+             done: TensorType[..., "batch", torch.uint8]) -> None:  # Store experience in memory
         
         self.memory.add(states, actions, rewards, next_states, done)
         
@@ -195,10 +191,10 @@ class DQNetAgent(BaseAgent):
         self.soft_update()
     
     @typechecked
-    def act(self, states: TensorType["batch", -1, torch.float32], train=True) -> TensorType[
-        "batch", -1]:
+    def act(self, states: TensorType[..., "batch", torch.float32], train=True) -> TensorType[
+        ..., "batch"]:
         epsilon = self.policy.step(self.time_step)
-        states = states.to(device)
+        states = states.to(self.device)
         
         # Get estimate action values from local network
         self.q_local.eval()
@@ -209,11 +205,11 @@ class DQNetAgent(BaseAgent):
         # Epsilon-greedy action selection
         if train:
             if self.rng.random() > epsilon:
-                return self.policy.exploit(action_values).squeeze(2)
+                return self.policy.exploit(action_values)
             else:
-                return self.policy.explore(action_values).squeeze(2)
+                return self.policy.explore(action_values)
         else:
-            return self.policy.exploit(action_values).squeeze(2)
+            return self.policy.exploit(action_values)
     
     @typechecked
     def soft_update(self) -> None:
@@ -226,8 +222,8 @@ class InvalidParameters(Exception):
         self.message = message
 
 
-def make_agent(state_size: int, action_size: int, seed: int, update_every: int, gamma: float,
-               tau: float, optimizer_cls: Type[torch.optim.Optimizer], lr: float,
+def make_agent(seed: int, update_every: int, gamma: float, tau: float, device: torch.device,
+               optimizer_cls: Type[torch.optim.Optimizer], lr: float,
                policy: BaseEpsilonGreedyPolicy, model: BaseDQNModel, double_dqn: bool = False,
                prioritized_replay_buffer: bool = False,
                replay_buffer_args: dict = None) -> DQNetAgent:
@@ -246,6 +242,7 @@ def make_agent(state_size: int, action_size: int, seed: int, update_every: int, 
     
     
     
+    :param device:  device to host tensors
     :param state_size: size of each state in the state space
     :param action_size: size of the action space
     :param seed: random seed
@@ -281,8 +278,7 @@ def make_agent(state_size: int, action_size: int, seed: int, update_every: int, 
             'prioritized_replay_buffer': {True : PrioritizedLearningStrategy,
                                           False: DQNLearningStrategy}, }
     
-    agent = DQNetAgent(state_size=state_size, action_size=action_size, seed=seed,
-                       update_every=update_every, gamma=gamma, tau=tau)
+    agent = DQNetAgent(seed=seed, update_every=update_every, gamma=gamma, tau=tau, device=device)
     estimator = options_mapping['double_dqn'][double_dqn]
     agent.set_estimator(estimator())
     

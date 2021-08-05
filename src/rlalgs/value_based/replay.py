@@ -17,8 +17,8 @@ patch_typeguard()
 
 @typechecked
 def unpack_samples(samples: np.ndarray, device: torch.device) -> Tuple[
-    TensorType["batch", -1], TensorType["batch", -1], TensorType["batch", -1], TensorType[
-        "batch", -1], TensorType["batch", -1]]:
+    TensorType[..., "batch"], TensorType[..., "batch"], TensorType[..., "batch"], TensorType[
+        ..., "batch"], TensorType[..., "batch", torch.uint8]]:
     """
     Unpack samples, resulting in torch Tensor with shape (batch_size, *) for each field
     
@@ -26,11 +26,11 @@ def unpack_samples(samples: np.ndarray, device: torch.device) -> Tuple[
     :param device: exec device
     :return: states, actions, rewards, next_states and done samples
     """
-    states = torch.stack(tuple(samples["state"])).to(device)
-    actions = torch.stack(tuple(samples["action"])).long().to(device)
-    rewards = torch.stack(tuple(samples["reward"])).to(device)
-    next_states = torch.stack(tuple(samples["next_state"])).to(device)
-    dones = torch.stack(tuple(samples["done"])).byte().to(device)
+    states = torch.stack(tuple(samples["state"])).to(device).T
+    actions = torch.stack(tuple(samples["action"])).long().to(device).T
+    rewards = torch.stack(tuple(samples["reward"])).to(device).T
+    next_states = torch.stack(tuple(samples["next_state"])).to(device).T
+    dones = torch.stack(tuple(samples["done"])).byte().to(device).T
     
     return states, actions, rewards, next_states, dones
 
@@ -48,7 +48,7 @@ class BaseBuffer(ABC):
         self.rng = np.random.Generator(np.random.PCG64(seed=seed))
     
     def _add_to_buffer(self, data: Collection[TensorType]) -> None:
-        data = [datum.to(self.device) for datum in data]
+        data = [datum.T.to(self.device) for datum in data]
         
         data_batch = data[0].shape[0]
         
@@ -70,8 +70,9 @@ class BaseBuffer(ABC):
                 self.buffer_length = self.memory_pos
     
     @abstractmethod
-    def add(self, state: TensorType[-1, -1], action: TensorType[-1, -1], reward: TensorType[-1, -1],
-            next_state: TensorType[-1, -1], done: TensorType[-1, -1, torch.uint8]) -> None:
+    def add(self, state: TensorType[..., "batch"], action: TensorType[..., "batch"],
+            reward: TensorType[..., "batch"], next_state: TensorType[..., "batch"],
+            done: TensorType[..., "batch", torch.uint8]) -> None:
         """
         Add a new experience to memory.
         :param state: current state
@@ -113,15 +114,15 @@ class ReplayBuffer(BaseBuffer):
                                       ("next_state", object), ("done", object)])
     
     @typechecked
-    def add(self, state: TensorType["batch", -1], action: TensorType["batch", -1],
-            reward: TensorType["batch", -1], next_state: TensorType["batch", -1],
-            done: TensorType["batch", -1, torch.uint8]) -> None:
+    def add(self, state: TensorType[..., "batch"], action: TensorType[..., "batch"],
+            reward: TensorType[..., "batch"], next_state: TensorType[..., "batch"],
+            done: TensorType[..., "batch", torch.uint8]) -> None:
         self._add_to_buffer((state, action, reward, next_state, done))
     
     @typechecked
     def sample(self) -> Tuple[
-        TensorType["batch", -1], TensorType["batch", -1], TensorType["batch", -1], TensorType[
-            "batch", -1], TensorType["batch", -1]]:
+        TensorType[..., "batch"], TensorType[..., "batch"], TensorType[..., "batch"], TensorType[
+            ..., "batch"], TensorType[..., "batch", torch.uint8]]:
         samples_id = self.rng.choice(len(self), size=self.batch_size)
         samples = self.memory[samples_id]
         
@@ -201,9 +202,9 @@ class PrioritizedReplayBuffer(BaseBuffer):
         self.probabilities = torch.tensor([])
     
     @typechecked
-    def add(self, state: TensorType["batch", -1], action: TensorType["batch", -1],
-            reward: TensorType["batch", -1], next_state: TensorType["batch", -1],
-            done: TensorType["batch", -1, torch.uint8]) -> None:
+    def add(self, state: TensorType[..., "batch"], action: TensorType[..., "batch"],
+            reward: TensorType[..., "batch"], next_state: TensorType[..., "batch"],
+            done: TensorType[..., "batch", torch.uint8]) -> None:
         if self.memory_pos != 0:
             priority = self.memory["priority"].max()
         else:
@@ -219,8 +220,9 @@ class PrioritizedReplayBuffer(BaseBuffer):
     
     @typechecked
     def sample(self) -> Tuple[
-        TensorType["batch", -1], TensorType["batch", -1], TensorType["batch", -1], TensorType[
-            "batch", -1], TensorType["batch", -1], TensorType["batch", torch.long]]:
+        TensorType[..., "batch"], TensorType[..., "batch"], TensorType[..., "batch"], TensorType[
+            ..., "batch"], TensorType[..., "batch", torch.uint8], TensorType[
+            ..., "batch", torch.long]]:
         p_i = torch.from_numpy(self.memory["priority"][:self.buffer_length].copy()) ** self.alpha
         self.probabilities = (p_i / torch.sum(p_i))
         

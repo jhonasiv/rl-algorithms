@@ -1,8 +1,9 @@
-import torch
 from abc import ABC, abstractmethod
+from typing import Collection, Tuple
+
+import torch
 from torchtyping import TensorType
 from typeguard import typechecked
-from typing import Collection, Tuple
 
 from rlalgs.value_based.model import BaseDQNModel
 from rlalgs.value_based.policies import BasePolicy
@@ -34,27 +35,26 @@ class DQNEstimatorStrategy(BaseEstimatorStrategy):
     @staticmethod
     @typechecked
     def estimate(q_target: BaseDQNModel, q_local: BaseDQNModel, policy: BasePolicy,
-                 states: TensorType["batch", -1], next_states: TensorType["batch", -1],
-                 rewards: TensorType["batch", -1], actions: TensorType["batch", -1],
-                 dones: TensorType["batch", -1], gamma: float) -> Tuple[
-        TensorType["batch", "action", "values", torch.float32], TensorType[
-            "batch", "action", "values", torch.float32]]:
+                 states: TensorType[..., "batch"], next_states: TensorType[..., "batch"],
+                 rewards: TensorType[..., "batch"], actions: TensorType[..., "batch"],
+                 dones: TensorType[..., "batch"], gamma: float) -> Tuple[
+        TensorType[..., "batch", torch.float32], TensorType[..., "batch", torch.float32]]:
         # Max action value for each episode in the sample
         target_values = q_target(next_states)
-        greedy_actions = policy.exploit(target_values)
-        greedy_value = target_values.gather(2, greedy_actions)
+        greedy_actions = policy.exploit(target_values).unsqueeze(0)
+        greedy_value = target_values.gather(-1, greedy_actions)
         
         # Calculate the target action-value for taking each action from each origin state in the
         # sample. If the episode is terminal, the action-value is the reward
-        dones = dones.repeat((1, greedy_value.shape[1])).unsqueeze(2)
-        rewards = rewards.repeat((1, greedy_value.shape[1])).unsqueeze(2)
+        # dones = dones.repeat((1, greedy_value.shape[1])).unsqueeze(2)
+        # rewards = rewards.repeat((1, greedy_value.shape[1])).unsqueeze(2)
         target_estimate = rewards + gamma * greedy_value * (1 - dones)
         
         # Get the estimates for the local network and gather the action-value for each action
         # taken in the sample.
         local_estimate = q_local(states)
-        actions = actions.unsqueeze(2)
-        local_estimate = local_estimate.gather(2, actions)
+        actions = actions.unsqueeze(0)
+        local_estimate = local_estimate.gather(-1, actions)
         return target_estimate, local_estimate
 
 
