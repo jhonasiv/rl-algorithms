@@ -1,4 +1,4 @@
-# Alien-v0
+# Assault-v0
 
 # Installation
 
@@ -18,10 +18,10 @@ pip install torch numpy torchtyping torchguard gym "gym[atari]" atari_py
 
 ### Atari ROM
 
-1. Download the ROM for the Alien game.
+1. Download the ROM for the Assault game.
 #### Manually downloading and extracting
-You can download the ROM for the Alien game
-by accessing [this link](http://www.atarimania.com/game-atari-2600-vcs-alien_7513.html).
+You can download the ROM for the Assault game
+by accessing [this link](http://www.atarimania.com/pgedump.awp?id=11532).
 After the download is finished, extract the file to a folder of your choice.
 
 #### Download using the terminal
@@ -31,12 +31,12 @@ After the download is finished, extract the file to a folder of your choice.
     ```
 - Download and extract the bin to the directory of your choice.
     ```shell
-    curl http://www.atarimania.com/pgedump.awp?id=7513 --output alien.zip 
-    unzip alien.zip -d <dir>
+    curl http://www.atarimania.com/pgedump.awp?id=11532 --output assault.zip 
+    unzip assault.zip -d <dir>
     ```
 ----
 2. After extracting the ROM, you must import it using the atari_py package. This process should 
-print out the name of the Alien ROM as you import it.
+print out the name of the Assault ROM as you import it.
     ```shell
     python -m atari_py.import_roms <dir>
     ```

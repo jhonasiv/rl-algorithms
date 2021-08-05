@@ -48,7 +48,7 @@ class BaseBuffer(ABC):
         self.rng = np.random.Generator(np.random.PCG64(seed=seed))
     
     def _add_to_buffer(self, data: Collection[TensorType]) -> None:
-        data = [datum.T.to(self.device) for datum in data]
+        data = [datum.T.cpu() for datum in data]
         
         data_batch = data[0].shape[0]
         
@@ -212,11 +212,6 @@ class PrioritizedReplayBuffer(BaseBuffer):
         
         priority = torch.full_like(reward, priority)
         self._add_to_buffer((priority, state, action, reward, next_state, done))
-        # self.memory[self.memory_pos] = (priority, state, action, reward, next_state, done)
-        # self.memory_pos = (self.memory_pos + 1) % self.buffer_size
-        # self.buffer_length = self.buffer_length + 1 if self.buffer_length < self.buffer_size
-        # else \
-        #     self.buffer_size
     
     @typechecked
     def sample(self) -> Tuple[

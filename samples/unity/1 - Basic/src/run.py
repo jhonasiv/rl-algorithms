@@ -1,13 +1,12 @@
 from collections import deque
-from time import sleep
 
 import numpy as np
 import torch
 from mlagents_envs.base_env import ActionTuple
 from mlagents_envs.environment import UnityEnvironment
-from model import BasicModel
 from torch import nn
 
+from model import BasicModel
 from rlalgs.value_based.agent import DQNetAgent, make_agent
 from rlalgs.value_based.policies import DecayEpsilonGreedy
 
@@ -29,10 +28,12 @@ def run(env_filename: str, seed: int, update_rate: int, lr: float, tau: float, g
     model = BasicModel(sequential_model=nn.Sequential(nn.Linear(state_size, 64), nn.ReLU(),
                                                       nn.Linear(64, action_size)))
     agent = make_agent(seed=seed, model=model, update_every=update_rate, policy=policy,
-                       optimizer_cls=torch.optim.Adam, lr=lr, tau=tau, gamma=gamma, double_dqn=True,
+                       device=device, optimizer_cls=torch.optim.Adam, lr=lr, tau=tau, gamma=gamma,
+                       double_dqn=True,
                        replay_buffer_args={"batch_size": batch_size, "buffer_size": int(1e5)})
     
     train(env, behavior_specs_name, agent, 2000)
+    evaluate(agent, env, behavior_specs_name)
 
 
 def train(env: UnityEnvironment, spec_name: str, agent: DQNetAgent, num_eps: int):
@@ -70,12 +71,14 @@ def train(env: UnityEnvironment, spec_name: str, agent: DQNetAgent, num_eps: int
         if np.mean(moving_avg) > 0.93:
             print(f"Achieved moving average of {np.mean(moving_avg)}! Stop training!")
             break
+
+
+def evaluate(agent, env, spec_name):
     eval_rewards = []
     for n in range(200):
         env.reset()
         ep_rewards = []
         while True:
-            sleep(0.1)
             env.step()
             decision_steps, terminal_steps = env.get_steps(spec_name)
             if len(terminal_steps) == 0:
