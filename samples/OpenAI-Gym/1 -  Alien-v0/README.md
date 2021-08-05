@@ -13,7 +13,7 @@ install the following dependencies.
 
 ```shell
 pip install -i https://test.pypi.org/simple/ rlalgs
-pip install torch numpy torchtyping typeguard gym "gym[atari]" atari_py
+pip install torch numpy torchtyping typeguard gym "gym[atari]" atari_py wheel
 ```
 
 ### Atari ROM
