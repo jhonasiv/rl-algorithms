@@ -53,7 +53,7 @@ class BaseBuffer(ABC):
         data_batch = data[0].shape[0]
         
         memory_slice = self.memory_pos + data_batch
-        if memory_slice > self.buffer_size:
+        if memory_slice >= self.buffer_size:
             diff = self.buffer_size - self.memory_pos
             self.memory[self.memory_pos:] = [dat for dat in zip(*(datum[:diff] for datum in data))]
             

@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 
+import numpy as np
 import torch
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
@@ -174,3 +175,14 @@ class ExponentialEpsilonGreedy(BaseEpsilonGreedyPolicy):
                                                     exp=2, a=1)
         self._epsilon = max(self._epsilon, self._epsilon_min)
         return self._epsilon
+
+
+class LinearAnnealing(BaseEpsilonGreedyPolicy):
+    def __init__(self, epsilon: float, discrete: bool, epsilon_min: float, num_steps: int):
+        super().__init__(epsilon, discrete)
+        self.epsilons = np.linspace(epsilon, epsilon_min, num_steps)
+        self.num_step = num_steps
+    
+    def step(self, time_step: int) -> float:
+        time_step = min(self.num_step, time_step)
+        return self.epsilons[time_step]
