@@ -79,7 +79,7 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size", default=32, type=int, help="batch size")
     parser.add_argument("--render", nargs='?', const=True, default=False, help="render env")
     parser.add_argument("--gpu", default=None, choices=[None, 'no', 'yes'], help="use gpu")
-    parser.add_argument("--buffer_size", default=1e5, type=int)
+    parser.add_argument("--buffer_size", default=1e5, type=float)
     
     args = parser.parse_args()
     run(**vars(args))
