@@ -65,8 +65,7 @@ class DoubleDQNEstimatorStrategy(BaseEstimatorStrategy):
                  states: TensorType[..., "batch"], next_states: TensorType[..., "batch"],
                  rewards: TensorType[..., "batch"], actions: TensorType[..., "batch"],
                  dones: TensorType[..., "batch"], gamma: float) -> Tuple[
-        TensorType["batch", "action", "values", torch.float32], TensorType[
-            "batch", "action", "values", torch.float32]]:
+        TensorType[..., "batch", torch.float32], TensorType[ ..., "batch", torch.float32]]:
         local_values = q_local(next_states)
         local_actions = policy.exploit(local_values).unsqueeze(0)
         greedy_value = local_values.gather(-1, local_actions)
