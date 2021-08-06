@@ -13,18 +13,22 @@ install the following dependencies.
 
 ```shell
 pip install -i https://test.pypi.org/simple/ rlalgs
-pip install torch numpy torchtyping typeguard gym "gym[atari]" atari_py wheel
+pip install wheel
+pip install torch numpy torchtyping typeguard gym "gym[atari]" atari_py  opencv-python
 ```
 
 ### Atari ROM
 
 1. Download the ROM for the Assault game.
+
 #### Manually downloading and extracting
-You can download the ROM for the Assault game
-by accessing [this link](http://www.atarimania.com/pgedump.awp?id=11532).
-After the download is finished, extract the file to a folder of your choice.
+
+You can download the ROM for the Assault game by
+accessing [this link](http://www.atarimania.com/pgedump.awp?id=11532). After the download is
+finished, extract the file to a folder of your choice.
 
 #### Download using the terminal
+
 - Make sure you have curl and unzip installed
     ```shell
     sudo apt install curl unzip
@@ -34,9 +38,11 @@ After the download is finished, extract the file to a folder of your choice.
     curl http://www.atarimania.com/pgedump.awp?id=11532 --output assault.zip 
     unzip assault.zip -d <dir>
     ```
+
 ----
-2. After extracting the ROM, you must import it using the atari_py package. This process should 
-print out the name of the Assault ROM as you import it.
+
+2. After extracting the ROM, you must import it using the atari_py package. This process should
+   print out the name of the Assault ROM as you import it.
     ```shell
     python -m atari_py.import_roms <dir>
     ```

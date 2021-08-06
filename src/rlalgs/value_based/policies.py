@@ -180,9 +180,9 @@ class ExponentialEpsilonGreedy(BaseEpsilonGreedyPolicy):
 class LinearAnnealing(BaseEpsilonGreedyPolicy):
     def __init__(self, epsilon: float, discrete: bool, epsilon_min: float, num_steps: int):
         super().__init__(epsilon, discrete)
-        self.epsilons = np.linspace(epsilon, epsilon_min, num_steps)
-        self.num_step = num_steps
+        self._step_size = (epsilon - epsilon_min) / num_steps
+        self._epsilon_min = epsilon_min
     
     def step(self, time_step: int) -> float:
-        time_step = min(self.num_step, time_step)
-        return self.epsilons[time_step]
+        self._epsilon = max(self._epsilon_min, self._epsilon - self._step_size)
+        return self._epsilon

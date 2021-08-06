@@ -27,9 +27,9 @@ def run(env_filename: str, seed: int, update_rate: int, lr: float, tau: float, g
     
     model = BasicModel(sequential_model=nn.Sequential(nn.Linear(state_size, 64), nn.ReLU(),
                                                       nn.Linear(64, action_size)))
-    agent = make_agent(seed=seed, model=model, update_every=update_rate, policy=policy,
-                       device=device, optimizer_cls=torch.optim.Adam, lr=lr, tau=tau, gamma=gamma,
-                       double_dqn=True,
+    agent = make_agent(seed=seed, update_every=update_rate, gamma=gamma, tau=tau, device=device,
+                       learning_threshold=0, optimizer_cls=torch.optim.Adam, lr=lr, policy=policy,
+                       model=model, double_dqn=True,
                        replay_buffer_args={"batch_size": batch_size, "buffer_size": int(1e5)})
     
     train(env, behavior_specs_name, agent, 2000)
