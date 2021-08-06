@@ -133,7 +133,7 @@ class BaseAgent(abc.ABC):
         """
     
     @abc.abstractmethod
-    def act(self, state: TensorType[..., "batch", torch.float32], train: bool = True) -> Union[
+    def act(self, state: TensorType[..., "batch"], train: bool = True) -> Union[
         int, float, torch.Tensor, np.ndarray]:
         """
         The agent acts following a epsilon-greedy policy.
@@ -172,9 +172,9 @@ class DQNetAgent(BaseAgent):
         if torch.any(done):
             self.episode += 1
         # Learn every update_every time steps
-        self.time_step += states.shape[0]
+        self.time_step += states.shape[-1]
         if self.time_step % (self.update_every * states.shape[
-            0]) == 0 and self.time_step > self.learning_threshold:
+            -1]) == 0 and self.time_step > self.learning_threshold:
             # Check if there are enough samples in memory, if so, get a sample and learn from it
             if len(self.memory) > self.batch_size:
                 experiences = self.memory.sample()
@@ -193,8 +193,7 @@ class DQNetAgent(BaseAgent):
         self.soft_update()
     
     @typechecked
-    def act(self, states: TensorType[..., "batch", torch.float32], train=True) -> TensorType[
-        ..., "batch"]:
+    def act(self, states: TensorType[..., "batch"], train=True) -> TensorType[..., "batch"]:
         epsilon = self.policy.step(self.time_step)
         states = states.to(self.device)
         

@@ -18,13 +18,13 @@ def train(env: TimeLimit, agent: BaseAgent, num_eps: int, input_dim: tuple, rend
     for n in range(num_eps):
         state = env.reset()
         state = cv2.resize(state, input_dim)
-        state = torch.from_numpy(state).float().unsqueeze(-1)
+        state = torch.from_numpy(state).byte().unsqueeze(-1)
         ep_score = 0
         while True:
             action = agent.act(state)
             next_state, reward, done, _ = env.step(action)
             next_state = cv2.resize(next_state, input_dim)
-            next_state_tensor = torch.from_numpy(next_state).float().unsqueeze(-1)
+            next_state_tensor = torch.from_numpy(next_state).byte().unsqueeze(-1)
             reward_tensor = torch.tensor([reward]).float()
             done_tensor = torch.tensor([done]).byte()
             agent.step(state, action, reward_tensor, next_state_tensor, done_tensor)

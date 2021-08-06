@@ -24,7 +24,7 @@ class AlienDQN(DQNModel):
     
     @typechecked
     def forward(self, x: TensorType[..., "batch"]) -> TensorType[..., "batch"]:
-        x = x.T
+        x = x.T.float()
         x = self._model(x)
         x = x.view(x.size(0), -1)
         x = self._linear(x)
