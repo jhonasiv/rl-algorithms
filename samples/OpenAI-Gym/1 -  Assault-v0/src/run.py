@@ -60,7 +60,7 @@ def run(seed, update_every, gamma, tau, lr, batch_size, render, gpu, buffer_size
                                                nn.Conv2d(64, 64, (3, 3)), nn.ReLU()),
             linear_layers=nn.Sequential(nn.Linear(512, action_size)), device=device,
             input_dim=input_dim)
-    agent = make_agent(seed=seed, update_every=update_every, gamma=gamma, tau=tau, device=device,
+    agent = make_agent(seed=seed, update_every=update_every, gamma=gamma, tau=tau, device=device, double_dqn=True,
                        learning_threshold=5e4, optimizer_cls=Adam, lr=lr, policy=policy,
                        model=model, replay_buffer_args={"batch_size" : batch_size,
                                                         "buffer_size": int(buffer_size)})
