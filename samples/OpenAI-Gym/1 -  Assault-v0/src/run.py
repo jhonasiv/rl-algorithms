@@ -53,14 +53,14 @@ def train(env: TimeLimit, agent: BaseAgent, num_eps: int, input_dim: tuple, rend
 
 
 def run(seed, update_every, gamma, tau, lr, batch_size, render, gpu, buffer_size,
-        learning_threshold):
+        learning_threshold, frame_skip):
     if gpu is None:
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     else:
         device = torch.device("cuda:0" if gpu == 'yes' else "cpu")
     
     num_eps = 14000
-    env = gym.make('Alien-v0')
+    env = gym.make('SpaceInvaders-v0', frameskip=frame_skip)
     action_size = env.action_space.n
     state_space = env.observation_space
     
@@ -69,12 +69,11 @@ def run(seed, update_every, gamma, tau, lr, batch_size, render, gpu, buffer_size
     policy = LinearAnnealedEpsilon(epsilon=1., discrete=True, epsilon_min=0.1, num_steps=int(1e6))
     # policy = ConstantEpsilonGreedy(epsilon=0.01, discrete=True)
     model = AlienDQN(
-            convolutional_layers=nn.Sequential(nn.Conv2d(4, 32, 5), nn.ReLU(),
-                                               nn.MaxPool2d((3, 3), 3),
-                                               nn.Conv2d(32, 64, 5), nn.ReLU(),
-                                               nn.MaxPool2d((2, 2), 2)),
-            linear_layers=nn.Sequential(nn.ReLU(), nn.Linear(200, action_size), nn.Softmax(1)),
-            device=device, input_dim=input_dim)
+            convolutional_layers=nn.Sequential(nn.Conv2d(4, 32, (8, 8), stride=(4, 4)), nn.ReLU(),
+                                               nn.Conv2d(32, 64, (4, 4), stride=(2, 2)), nn.ReLU(),
+                                               nn.Conv2d(64, 64, (3, 3)), nn.ReLU()),
+            linear_layers=nn.Sequential(nn.Linear(512, action_size)), device=device,
+            input_dim=input_dim)
     agent = make_agent(seed=seed, update_every=update_every, gamma=gamma, tau=tau, device=device,
                        double_dqn=True, learning_threshold=learning_threshold, optimizer_cls=SGD,
                        lr=lr, policy=policy, prioritized_replay_buffer=True, model=model,
@@ -102,6 +101,7 @@ if __name__ == '__main__':
                         help="maximum size of the replay buffer")
     parser.add_argument("--learning_threshold", default=int(5e4), type=int,
                         help="number of time steps before the learning starts")
+    parser.add_argument("--frame_skip", default=4, type=int, help="Skip frames between actions")
     
     args = parser.parse_args()
     run(**vars(args))

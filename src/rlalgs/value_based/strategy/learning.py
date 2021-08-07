@@ -110,7 +110,7 @@ class PrioritizedLearningStrategy(BaseLearningStrategy):
                                                                        gamma=gamma)
         weights = self.memory.calc_is_weight(samples_id=samples_id, beta=beta)
         td_error = (target_estimate - local_estimate).squeeze()
-        loss = (td_error ** 2 * weights).mean()
+        loss = (td_error ** 2).mul(weights).mean()
         self.memory.update(torch.abs(td_error), samples_id)
         optimizer.zero_grad()
         loss.backward()
