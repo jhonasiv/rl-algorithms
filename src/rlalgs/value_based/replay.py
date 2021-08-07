@@ -9,6 +9,8 @@ import torch
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
 
+from rlalgs.value_based.annealing import BaseFunction
+
 Experience = namedtuple('Experience',
                         field_names=['state', 'action', 'reward', 'next_state', 'done'])
 
@@ -48,7 +50,7 @@ class BaseBuffer(ABC):
         self.rng = np.random.Generator(np.random.PCG64(seed=seed))
     
     def _add_to_buffer(self, data: Collection[TensorType]) -> None:
-        data = [datum.T.cpu() for datum in data]
+        data = [datum.T for datum in data]
         
         data_batch = data[0].shape[0]
         
@@ -139,8 +141,8 @@ class ReplayBuffer(BaseBuffer):
 class BaseUpdateVariant(ABC):
     @abstractmethod
     @typechecked
-    def update(self, loss: TensorType["loss", torch.float32],
-               samples_id: TensorType["ids", torch.int], replay_buffer: Any) -> None:
+    def update(self, loss: TensorType["batch", torch.float32],
+               samples_id: TensorType["batch", torch.long], replay_buffer: Any) -> None:
         """
         Update priorities
         :param loss: TD-difference from last sample
@@ -150,20 +152,22 @@ class BaseUpdateVariant(ABC):
 
 
 @dataclass
-class ConstantUpdateVariant(BaseUpdateVariant):
+class ProportionalUpdateVariant(BaseUpdateVariant):
     constant: float
     
     @typechecked
-    def update(self, loss: TensorType["loss", torch.float32],
-               samples_id: TensorType["ids", torch.int], replay_buffer: Any) -> None:
-        for sample_id in samples_id:
-            replay_buffer.priorities[sample_id] = loss + self.constant
+    def update(self, loss: TensorType["batch", torch.float32],
+               samples_id: TensorType["batch", torch.long], priorities: TensorType[torch.float32]) \
+            -> None:
+        # priorities[samples_id] = torch.abs(loss) + self.constant
+        with torch.no_grad():
+            priorities[samples_id] = torch.abs(loss) + self.constant
 
 
 class RankedUpdateVariant(BaseUpdateVariant):
     @typechecked
-    def update(self, loss: TensorType["loss", torch.float32],
-               samples_id: TensorType["ids", torch.int], replay_buffer: Any) -> None:
+    def update(self, loss: TensorType["batch", torch.float32],
+               samples_id: TensorType["batch", torch.long], replay_buffer: Any) -> None:
         loss_sorted_indices = torch.sort(loss).indices
         ranks = 1 / (torch.arange(len(loss_sorted_indices)) + 1)
         sorted_sample_id = samples_id[loss_sorted_indices]
@@ -173,7 +177,7 @@ class RankedUpdateVariant(BaseUpdateVariant):
 class PrioritizedReplayBuffer(BaseBuffer):
     @typechecked
     def __init__(self, batch_size: int, buffer_size: int, seed: int, device: torch.device,
-                 alpha: float, update_variant: BaseUpdateVariant):
+                 alpha: BaseFunction, update_variant: BaseUpdateVariant):
         """
         Prioritized replay buffer constructor
         
@@ -192,39 +196,67 @@ class PrioritizedReplayBuffer(BaseBuffer):
         
         self.memory_pos = 0
         self.buffer_length = 0
+        self.priorities = torch.zeros(buffer_size, dtype=torch.float32, device=device,
+                                      requires_grad=False)
         self.memory = np.empty(buffer_size,
-                               dtype=[("priority", np.float32), ("state", torch.Tensor),
-                                      ("action", torch.Tensor), ("reward", torch.Tensor),
-                                      ("next_state", torch.Tensor), ("done", torch.Tensor)])
+                               dtype=[("state", torch.Tensor), ("action", torch.Tensor),
+                                      ("reward", torch.Tensor), ("next_state", torch.Tensor),
+                                      ("done", torch.Tensor)])
         self.rng = np.random.Generator(np.random.PCG64(seed=seed))
         
         self.alpha = alpha
-        self.probabilities = torch.tensor([])
+        self.probabilities = torch.tensor([], requires_grad=False)
+    
+    def _add_to_buffer(self, data: Collection[TensorType], priorities: TensorType[torch.float32]) \
+            -> None:
+        data = [datum.T for datum in data]
+        
+        data_batch = data[0].shape[0]
+        
+        memory_slice = self.memory_pos + data_batch
+        if memory_slice >= self.buffer_size:
+            diff = self.buffer_size - self.memory_pos
+            self.priorities[self.memory_pos:] = priorities[:diff]
+            self.memory[self.memory_pos:] = [dat for dat in zip(*(datum[:diff] for datum in data))]
+            
+            self.memory[:data_batch - diff] = [dat for dat in
+                                               zip(*(datum[diff:] for datum in data))]
+            self.priorities[:data_batch - diff] = priorities[diff:]
+            
+            self.memory_pos = diff
+            self.buffer_length = self.buffer_size
+        
+        else:
+            self.memory[self.memory_pos:memory_slice] = [dat for dat in zip(*data)]
+            self.priorities[self.memory_pos:memory_slice] = priorities
+            self.memory_pos = memory_slice % self.buffer_size
+            if self.buffer_length != self.buffer_size:
+                self.buffer_length = self.memory_pos
     
     @typechecked
     def add(self, state: TensorType[..., "batch"], action: TensorType[..., "batch"],
             reward: TensorType[..., "batch"], next_state: TensorType[..., "batch"],
             done: TensorType[..., "batch", torch.uint8]) -> None:
         if self.memory_pos != 0:
-            priority = self.memory["priority"].max()
+            priority = self.priorities.max().item()
         else:
             priority = 1
         
         priority = torch.full_like(reward, priority)
-        self._add_to_buffer((priority, state, action, reward, next_state, done))
+        self._add_to_buffer((state, action, reward, next_state, done), priority)
     
     @typechecked
     def sample(self) -> Tuple[
         TensorType[..., "batch"], TensorType[..., "batch"], TensorType[..., "batch"], TensorType[
             ..., "batch"], TensorType[..., "batch", torch.uint8], TensorType[
             ..., "batch", torch.long]]:
-        p_i = torch.from_numpy(self.memory["priority"][:self.buffer_length].copy()) ** self.alpha
-        self.probabilities = (p_i / torch.sum(p_i))
+        p_i = self.priorities[:self.buffer_length].pow(self.alpha.value())
+        # p_i = torch.from_numpy(
+        #         self.memory["priority"][:self.buffer_length].copy()) ** self.alpha.value()
+        self.probabilities = (p_i / torch.sum(p_i)).to(self.device)
         
-        samples_id = torch.from_numpy(
-                self.rng.choice(len(self), size=self.batch_size, p=self.probabilities.numpy(),
-                                replace=False)).long()
-        samples = self.memory[samples_id]
+        samples_id = torch.multinomial(self.probabilities, self.batch_size, replacement=False)
+        samples = self.memory[samples_id.cpu()]
         
         states, actions, rewards, next_states, dones = unpack_samples(samples, self.device)
         
@@ -241,19 +273,20 @@ class PrioritizedReplayBuffer(BaseBuffer):
         """
         sample_probabilities = self.probabilities[samples_id]
         weights: torch.Tensor = ((1 / (len(self) * sample_probabilities)) ** beta)
-        weights /= weights.max()
+        weights = weights / weights.max()
         return weights.float().to(self.device)
     
     @typechecked
     def update(self, loss: TensorType[-1, torch.float32],
-               samples_id: TensorType[-1, torch.int]) -> None:
+               samples_id: TensorType[-1, torch.long]) -> None:
         """
         Update priorities for every experience
         
         :param loss: TD-difference from the last gradient descent step
         :param samples_id: list of IDs for each sampled experience in this time step
         """
-        self.update_variant.update(loss, samples_id, self)
+        priorities = self.priorities
+        self.update_variant.update(loss, samples_id, priorities)
     
     @typechecked
     def __len__(self) -> int:

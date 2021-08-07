@@ -17,6 +17,7 @@ from .strategy.estimate import (BaseEstimatorStrategy, DQNEstimatorStrategy,
 
 patch_typeguard()
 
+torch.autograd.set_detect_anomaly(True)
 
 @dataclass
 class BaseAgent(abc.ABC):
@@ -167,14 +168,14 @@ class DQNetAgent(BaseAgent):
              rewards: TensorType[..., "batch"], next_states: TensorType[..., "batch"],
              done: TensorType[..., "batch", torch.uint8]) -> None:  # Store experience in memory
         
-        self.memory.add(states, actions, rewards, next_states, done)
+        self.memory.add(states.to(self.device), actions.to(self.device), rewards.to(self.device),
+                        next_states.to(self.device), done.to(self.device))
         
         if torch.any(done):
             self.episode += 1
         # Learn every update_every time steps
         self.time_step += states.shape[-1]
-        if self.time_step % (self.update_every * states.shape[
-            -1]) == 0 and self.time_step > self.learning_threshold:
+        if self.time_step > self.learning_threshold:
             # Check if there are enough samples in memory, if so, get a sample and learn from it
             if len(self.memory) > self.batch_size:
                 experiences = self.memory.sample()
@@ -182,7 +183,6 @@ class DQNetAgent(BaseAgent):
     
     @typechecked
     def learn(self, experiences: Collection[Experience]) -> None:
-        # states, actions, rewards, next_states, dones = experiences
         self.learning_strategy.learn(experiences=experiences, policy=self.policy,
                                      estimation_strategy=self.estimation_strategy,
                                      q_target=self.q_target, q_local=self.q_local,
@@ -190,7 +190,8 @@ class DQNetAgent(BaseAgent):
                                      episode=self.episode)
         
         # Update the target network
-        self.soft_update()
+        if self.time_step % self.update_every == 0:
+            self.soft_update()
     
     @typechecked
     def act(self, states: TensorType[..., "batch"], train=True) -> TensorType[..., "batch"]:

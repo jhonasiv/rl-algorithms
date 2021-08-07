@@ -2,12 +2,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 
-import numpy as np
 import torch
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
 
 from rlalgs.utils.functions import casted_exponential_function, constant_decay_function
+from rlalgs.value_based.annealing import LinearAnnealing
 
 patch_typeguard()
 
@@ -177,12 +177,11 @@ class ExponentialEpsilonGreedy(BaseEpsilonGreedyPolicy):
         return self._epsilon
 
 
-class LinearAnnealing(BaseEpsilonGreedyPolicy):
+class LinearAnnealedEpsilon(BaseEpsilonGreedyPolicy):
     def __init__(self, epsilon: float, discrete: bool, epsilon_min: float, num_steps: int):
         super().__init__(epsilon, discrete)
-        self._step_size = (epsilon - epsilon_min) / num_steps
-        self._epsilon_min = epsilon_min
+        self.func = LinearAnnealing(val_init=epsilon, val_thresh=epsilon_min, max_itt=num_steps)
     
     def step(self, time_step: int) -> float:
-        self._epsilon = max(self._epsilon_min, self._epsilon - self._step_size)
+        self._epsilon = self.func.step(time_step)
         return self._epsilon

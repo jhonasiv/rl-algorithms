@@ -1,15 +1,17 @@
-import torch
 from abc import ABC, abstractmethod
+from typing import Collection, Optional
+
+import torch
 from torch.nn import functional as f
 from torchtyping import patch_typeguard
 from typeguard import typechecked
-from typing import Collection, Optional
 
-from rlalgs.value_based.beta_annealing import BaseBetaFunction
+from rlalgs.value_based.annealing import BaseFunction
 from rlalgs.value_based.model import BaseDQNModel
 from rlalgs.value_based.policies import BasePolicy
-from rlalgs.value_based.replay import (BaseBuffer, BaseUpdateVariant, ConstantUpdateVariant, Experience,
-                                       PrioritizedReplayBuffer, ReplayBuffer)
+from rlalgs.value_based.replay import (BaseBuffer, BaseUpdateVariant, Experience,
+                                       PrioritizedReplayBuffer, ProportionalUpdateVariant,
+                                       ReplayBuffer)
 from rlalgs.value_based.strategy.estimate import BaseEstimatorStrategy
 
 patch_typeguard()
@@ -71,8 +73,8 @@ class DQNLearningStrategy(BaseLearningStrategy):
 
 class PrioritizedLearningStrategy(BaseLearningStrategy):
     def __init__(self, batch_size: int, buffer_size: int, seed: int, device: torch.device,
-                 alpha: float, beta: BaseBetaFunction,
-                 update_variant: BaseUpdateVariant = ConstantUpdateVariant(1e-5)):
+                 alpha: BaseFunction, beta: BaseFunction,
+                 update_variant: BaseUpdateVariant = ProportionalUpdateVariant(1e-5)):
         """
         Prioritized Learning Strategy constructor
         
@@ -89,12 +91,14 @@ class PrioritizedLearningStrategy(BaseLearningStrategy):
                                                                        seed=seed, device=device,
                                                                        alpha=alpha,
                                                                        update_variant=update_variant)
+        self.alpha = alpha
         self.beta = beta
     
     def learn(self, experiences: Collection[Experience], estimation_strategy: BaseEstimatorStrategy,
               q_target: BaseDQNModel, q_local: BaseDQNModel, policy: BasePolicy,
               optimizer: torch.optim.Optimizer, gamma: float, episode: int) -> None:
         beta = self.beta.step(episode)
+        self.alpha.step(episode)
         states, actions, rewards, next_states, dones, samples_id = experiences
         
         target_estimate, local_estimate = estimation_strategy.estimate(q_target=q_target,
@@ -105,9 +109,11 @@ class PrioritizedLearningStrategy(BaseLearningStrategy):
                                                                        actions=actions, dones=dones,
                                                                        gamma=gamma)
         weights = self.memory.calc_is_weight(samples_id=samples_id, beta=beta)
-        loss = (target_estimate - local_estimate).pow(2).squeeze().mul(weights)
+        td_error = (target_estimate - local_estimate).squeeze()
+        loss = (td_error ** 2 * weights).mean()
+        self.memory.update(torch.abs(td_error), samples_id)
         optimizer.zero_grad()
-        self.memory.update(loss, samples_id)
-        loss = loss.mean()
         loss.backward()
+        for param in q_local.parameters():
+            param.grad.data.clamp_(-1, 1)
         optimizer.step()
