@@ -1,47 +1,33 @@
 import argparse
 
-import cv2
 import gym
 import numpy as np
 import torch
-from gym.wrappers import TimeLimit
 from torch import nn
 from torch.optim import SGD
 
 from model import AlienDQN
 from rlalgs.value_based.agent import BaseAgent, make_agent
-from rlalgs.value_based.annealing import Constant, LinearAnnealing
 from rlalgs.value_based.policies import LinearAnnealedEpsilon
-from rlalgs.value_based.replay import ProportionalUpdateVariant
+from utils import gym_wrappers
 
 
-def pre_processing(state, next_state, input_dim):
-    maximized = np.maximum(next_state, state)
-    lum = cv2.cvtColor(maximized, cv2.COLOR_RGB2GRAY)
-    lum_stacked = np.concatenate((maximized, lum.reshape(*lum.shape, 1)), axis=-1)
-    resized = cv2.resize(lum_stacked, input_dim)
-    return resized
-
-
-def train(env: TimeLimit, agent: BaseAgent, num_eps: int, input_dim: tuple, render: bool):
+def train(env: gym.Env, agent: BaseAgent, num_eps: int, render: bool):
     cumulative_score = []
     for n in range(num_eps):
-        original_state = env.reset()
-        state = pre_processing(original_state, original_state, input_dim)
-        state = torch.from_numpy(state).byte().unsqueeze(-1)
+        state = env.reset()
+        state = torch.from_numpy(state)
         ep_score = 0
         while True:
             action = agent.act(state)
-            original_next_state, reward, done, _ = env.step(action)
-            next_state = pre_processing(original_state, original_next_state, input_dim)
-            next_state_tensor = torch.from_numpy(next_state).byte().unsqueeze(-1)
+            next_state, reward, done, _ = env.step(action)
+            next_state_tensor = torch.from_numpy(next_state)
             reward_tensor = torch.tensor([reward]).float().clamp(min=-1, max=1)
             done_tensor = torch.tensor([done]).byte()
             agent.step(state, action, reward_tensor, next_state_tensor, done_tensor)
             if render:
                 env.render()
             state = next_state_tensor
-            original_state = original_next_state
             ep_score += reward
             if done:
                 break
@@ -60,7 +46,14 @@ def run(seed, update_every, gamma, tau, lr, batch_size, render, gpu, buffer_size
         device = torch.device("cuda:0" if gpu == 'yes' else "cpu")
     
     num_eps = 14000
-    env = gym.make('SpaceInvaders-v0', frameskip=frame_skip)
+    env = gym.make('SpaceInvaders-v0')
+    env = gym_wrappers.MaxAndSkipEnv(env, skip=4)
+    env = gym.wrappers.GrayScaleObservation(env, keep_dim=True)
+    env = gym.wrappers.ResizeObservation(env, shape=(84, 110))
+    env = gym_wrappers.CropObservation(env, slices=(slice(None, None), slice(18, 102),))
+    env = gym.wrappers.TransformObservation(env, lambda x: x / 255.)
+    env = gym_wrappers.StackFrame(env, stacks=4)
+    env = gym.wrappers.TransformObservation(env, lambda x: x.reshape(*x.shape, 1))
     action_size = env.action_space.n
     state_space = env.observation_space
     
@@ -69,21 +62,18 @@ def run(seed, update_every, gamma, tau, lr, batch_size, render, gpu, buffer_size
     policy = LinearAnnealedEpsilon(epsilon=1., discrete=True, epsilon_min=0.1, num_steps=int(1e6))
     # policy = ConstantEpsilonGreedy(epsilon=0.01, discrete=True)
     model = AlienDQN(
-            convolutional_layers=nn.Sequential(nn.Conv2d(4, 32, (8, 8), stride=(4, 4)), nn.ReLU(),
-                                               nn.Conv2d(32, 64, (4, 4), stride=(2, 2)), nn.ReLU(),
-                                               nn.Conv2d(64, 64, (3, 3)), nn.ReLU()),
+            convolutional_layers=nn.Sequential(nn.Conv2d(input_dim[-1], 32, (8, 8), stride=(4, 4)),
+                                               nn.ReLU(), nn.Conv2d(32, 64, (4, 4), stride=(2, 2)),
+                                               nn.ReLU(), nn.Conv2d(64, 64, (3, 3)), nn.ReLU()),
             linear_layers=nn.Sequential(nn.Linear(512, action_size)), device=device,
             input_dim=input_dim)
     agent = make_agent(seed=seed, update_every=update_every, gamma=gamma, tau=tau, device=device,
                        double_dqn=True, learning_threshold=learning_threshold, optimizer_cls=SGD,
-                       lr=lr, policy=policy, prioritized_replay_buffer=True, model=model,
-                       replay_buffer_args={"batch_size"    : batch_size,
-                                           "buffer_size"   : int(buffer_size),
-                                           "alpha"         : Constant(0.6),
-                                           "beta"          : LinearAnnealing(0.4, 1., num_eps),
-                                           "update_variant": ProportionalUpdateVariant(1e-6)})
+                       lr=lr, policy=policy, prioritized_replay_buffer=False, model=model,
+                       replay_buffer_args={"batch_size" : batch_size,
+                                           "buffer_size": int(buffer_size), })
     
-    train(env, agent, num_eps, input_dim[:-1], render)
+    train(env, agent, num_eps, render)
 
 
 if __name__ == '__main__':

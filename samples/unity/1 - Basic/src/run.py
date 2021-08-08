@@ -7,7 +7,7 @@ from mlagents_envs.environment import UnityEnvironment
 from torch import nn
 
 from model import BasicModel
-from rlalgs.value_based.agent import DQNetAgent, make_agent
+from rlalgs import DQNetAgent, make_agent
 from rlalgs.value_based.policies import DecayEpsilonGreedy
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

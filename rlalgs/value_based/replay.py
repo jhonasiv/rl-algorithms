@@ -243,7 +243,7 @@ class PrioritizedReplayBuffer(BaseBuffer):
             priority = 1
         
         priority = torch.full_like(reward, priority)
-        self._add_to_buffer((state, action, reward, next_state, done), priority)
+        self._add_to_buffer((state.cpu(), action, reward, next_state.cpu(), done), priority)
     
     @typechecked
     def sample(self) -> Tuple[
@@ -251,8 +251,6 @@ class PrioritizedReplayBuffer(BaseBuffer):
             ..., "batch"], TensorType[..., "batch", torch.uint8], TensorType[
             ..., "batch", torch.long]]:
         p_i = self.priorities[:self.buffer_length].pow(self.alpha.value())
-        # p_i = torch.from_numpy(
-        #         self.memory["priority"][:self.buffer_length].copy()) ** self.alpha.value()
         self.probabilities = (p_i / torch.sum(p_i)).to(self.device)
         
         samples_id = torch.multinomial(self.probabilities, self.batch_size, replacement=False)
