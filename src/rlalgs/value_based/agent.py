@@ -15,9 +15,15 @@ from .replay import BaseBuffer, Experience
 from .strategy.estimate import (BaseEstimatorStrategy, DQNEstimatorStrategy,
                                 DoubleDQNEstimatorStrategy)
 
+try:
+    from gym.wrappers import LazyFrames
+except ImportError:
+    LazyFrames = torch.Tensor
+
 patch_typeguard()
 
 torch.autograd.set_detect_anomaly(True)
+
 
 @dataclass
 class BaseAgent(abc.ABC):
@@ -134,7 +140,7 @@ class BaseAgent(abc.ABC):
         """
     
     @abc.abstractmethod
-    def act(self, state: TensorType[..., "batch"], train: bool = True) -> Union[
+    def act(self, state: Union[TensorType[..., "batch"], LazyFrames], train: bool = True) -> Union[
         int, float, torch.Tensor, np.ndarray]:
         """
         The agent acts following a epsilon-greedy policy.
@@ -164,14 +170,12 @@ class DQNetAgent(BaseAgent):
         super(DQNetAgent, self).__init__(**data)
     
     @typechecked
-    def step(self, states: TensorType[..., "batch"], actions: TensorType[..., "batch"],
-             rewards: TensorType[..., "batch"], next_states: TensorType[..., "batch"],
-             done: TensorType[..., "batch", torch.uint8]) -> None:  # Store experience in memory
+    def step(self, states: np.ndarray, actions: np.ndarray, rewards: np.ndarray,
+             next_states: np.ndarray, done: np.ndarray) -> None:  # Store experience in memory
         
-        self.memory.add(states.to(self.device), actions.to(self.device), rewards.to(self.device),
-                        next_states.to(self.device), done.to(self.device))
+        self.memory.add(states, actions, rewards, next_states, done)
         
-        if torch.any(done):
+        if np.any(done):
             self.episode += 1
         # Learn every update_every time steps
         self.time_step += states.shape[-1]
@@ -194,14 +198,14 @@ class DQNetAgent(BaseAgent):
             self.soft_update()
     
     @typechecked
-    def act(self, states: TensorType[..., "batch"], train=True) -> TensorType[..., "batch"]:
+    def act(self, states: np.ndarray, train=True) -> np.ndarray:
         epsilon = self.policy.step(self.time_step)
-        states = states.to(self.device)
+        # states = torch.from_numpy(states[:]).to(self.device)
         
         # Get estimate action values from local network
         self.q_local.eval()
         with torch.no_grad():
-            action_values = self.q_local(states)
+            action_values = self.q_local(torch.from_numpy(states))
         self.q_local.train()
         
         # Epsilon-greedy action selection

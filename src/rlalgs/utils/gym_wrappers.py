@@ -7,7 +7,7 @@ import numpy as np
 try:
     import gym
     import cv2
-    from gym.wrappers import FrameStack
+    from gym.wrappers import FrameStack, LazyFrames
 except ImportError as err:
     raise err
 
@@ -96,20 +96,25 @@ class TransposeObservation(gym.ObservationWrapper):
 
 
 class StackFrame(gym.ObservationWrapper):
-    def __init__(self, env, stacks: int):
+    def __init__(self, env, stacks: int, shape: Tuple, stack_axis: int):
         super().__init__(env)
         self.stacks = stacks
+        self.stack_axis = stack_axis
         self.observation_space = gym.spaces.Box(low=0, high=255,
-                                                shape=(*env.observation_space.shape[:-1], stacks),
-                                                dtype=env.observation_space.dtype)
-        self.buffer = np.zeros(self.observation_space.shape)
+                                                shape=shape, dtype=env.observation_space.dtype)
+        self.buffer = np.zeros(shape, dtype=env.observation_space.dtype)
     
     def reset(self, **kwargs):
         super(StackFrame, self).reset(**kwargs)
-        self.buffer = np.zeros(self.observation_space.shape)
+        self.buffer = np.zeros(self.observation_space.shape, dtype=self.observation_space.dtype)
         return self.observation(self.env.reset())
     
     def observation(self, observation):
-        self.buffer[:, :, :-1] = self.buffer[:, :, 1:]
-        self.buffer[:, :, -1] = observation.squeeze()
-        return self.buffer
+        slices = [ slice(None, None) for _ in self.observation_space.shape ]
+        move_old_slice = move_new_slice = slices
+        move_old_slice[self.stack_axis] = slice(None, -1)
+        move_new_slice[self.stack_axis] = slice(1, None)
+        set_slice = (slice(None, None) for _ in self.observation_space.shape[:-1])
+        self.buffer[tuple(move_old_slice)] = self.buffer[tuple(move_new_slice)]
+        self.buffer[tuple(set_slice)] = observation.squeeze()
+        return self.buffer.astype(dtype=self.observation_space.dtype)

@@ -67,8 +67,7 @@ class DoubleDQNEstimatorStrategy(BaseEstimatorStrategy):
                  dones: TensorType[..., "batch"], gamma: float) -> Tuple[
         TensorType[..., "batch", torch.float32], TensorType[ ..., "batch", torch.float32]]:
         local_values = q_local(next_states)
-        local_actions = policy.exploit(local_values).unsqueeze(0)
-        greedy_value = local_values.gather(-1, local_actions)
+        local_actions = torch.from_numpy(policy.exploit(local_values)).unsqueeze(0).to(local_values.device)
         
         # Calculate the target action-value for taking each action from each origin state in the
         # sample. If the episode is terminal, the action-value is the reward

@@ -103,10 +103,12 @@ class PrioritizedLearningStrategy(BaseLearningStrategy):
         
         target_estimate, local_estimate = estimation_strategy.estimate(q_target=q_target,
                                                                        q_local=q_local,
-                                                                       policy=policy, states=states,
+                                                                       policy=policy,
+                                                                       states=states,
                                                                        next_states=next_states,
                                                                        rewards=rewards,
-                                                                       actions=actions, dones=dones,
+                                                                       actions=actions,
+                                                                       dones=dones,
                                                                        gamma=gamma)
         weights = self.memory.calc_is_weight(samples_id=samples_id, beta=beta)
         td_error = (target_estimate - local_estimate).squeeze()

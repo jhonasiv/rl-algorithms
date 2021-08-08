@@ -20,11 +20,11 @@ class AlienDQN(DQNModel):
         reshape_layer = self.get_last_conv_size()
         first_linear_layer = [n for n, l in enumerate(linear_layers) if isinstance(l, nn.Linear)][0]
         self._linear = nn.Sequential(nn.Linear(reshape_layer, linear_layers[
-            first_linear_layer].in_features), linear_layers).to(device)
+            first_linear_layer].in_features), *linear_layers).to(device)
     
     @typechecked
     def forward(self, x: TensorType[..., "batch"]) -> TensorType[..., "batch"]:
-        x = x.T.float()
+        x = x.movedim(-1, 0).float().to(self.device)
         x = self._model(x)
         x = x.view(x.size(0), -1)
         x = self._linear(x)

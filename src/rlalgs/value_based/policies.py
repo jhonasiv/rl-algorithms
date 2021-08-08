@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 
+import numpy as np
 import torch
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
@@ -85,23 +86,21 @@ class BaseEpsilonGreedyPolicy(BasePolicy, ABC):
                 "If policy is not discrete, a gaussian " "noise must be defined.")
     
     @typechecked
-    def exploit(self, action_values: TensorType["action": ..., "batch"]) -> TensorType[
-        ..., "batch"]:
+    def exploit(self, action_values: TensorType["action": ..., "batch"]) -> np.ndarray:
         if self._discrete:
             actions = torch.argmax(action_values, dim=0)
-            return actions
+            return actions.detach().cpu().numpy()
         else:
-            return self._noise.step(action_values)
+            return self._noise.step(action_values).detach().cpu().numpy()
     
     @typechecked
-    def explore(self, action_values: TensorType["action": ..., "batch"]) -> TensorType[
-        ..., "batch"]:
+    def explore(self, action_values: TensorType["action": ..., "batch"]) -> np.ndarray:
         if self._discrete:
             result = torch.randint(0, action_values.shape[0], size=action_values.shape[1:])
-            return result
+            return result.detach().cpu().numpy()
         else:
-            return (self._action_boundaries[:, 1] - self._action_boundaries[:, 0]) * torch.rand(
-                    len(action_values)) + self._action_boundaries[:, 0]
+            return ((self._action_boundaries[:, 1] - self._action_boundaries[:, 0]) * torch.rand(
+                    len(action_values)) + self._action_boundaries[:, 0]).detach().cpu().numpy()
 
 
 class ConstantEpsilonGreedy(BaseEpsilonGreedyPolicy):

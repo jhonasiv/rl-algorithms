@@ -11,6 +11,11 @@ from typeguard import typechecked
 
 from rlalgs.value_based.annealing import BaseFunction
 
+try:
+    from gym.wrappers import LazyFrames
+except ImportError:
+    LazyFrames = torch.Tensor
+
 Experience = namedtuple('Experience',
                         field_names=['state', 'action', 'reward', 'next_state', 'done'])
 
@@ -18,7 +23,7 @@ patch_typeguard()
 
 
 @typechecked
-def unpack_samples(samples: np.ndarray, device: torch.device) -> Tuple[
+def unpack_samples(samples: Tuple[np.ndarray, ...], device: torch.device) -> Tuple[
     TensorType[..., "batch"], TensorType[..., "batch"], TensorType[..., "batch"], TensorType[
         ..., "batch"], TensorType[..., "batch", torch.uint8]]:
     """
@@ -28,11 +33,11 @@ def unpack_samples(samples: np.ndarray, device: torch.device) -> Tuple[
     :param device: exec device
     :return: states, actions, rewards, next_states and done samples
     """
-    states = torch.stack(tuple(samples["state"])).to(device).T
-    actions = torch.stack(tuple(samples["action"])).long().to(device).T
-    rewards = torch.stack(tuple(samples["reward"])).to(device).T
-    next_states = torch.stack(tuple(samples["next_state"])).to(device).T
-    dones = torch.stack(tuple(samples["done"])).byte().to(device).T
+    states = torch.from_numpy(np.moveaxis(samples[0], 0, -1)).to(device)
+    actions = torch.from_numpy(samples[1]).long().to(device)
+    rewards = torch.from_numpy(samples[2]).to(device)
+    next_states = torch.from_numpy(np.moveaxis(samples[3], 0, -1)).to(device)
+    dones = torch.from_numpy(samples[4]).byte().to(device)
     
     return states, actions, rewards, next_states, dones
 
@@ -49,7 +54,7 @@ class BaseBuffer(ABC):
         self.device = device
         self.rng = np.random.Generator(np.random.PCG64(seed=seed))
     
-    def _add_to_buffer(self, data: Collection[TensorType]) -> None:
+    def _add_to_buffer(self, data: Collection[np.ndarray]) -> None:
         data = [datum.T for datum in data]
         
         data_batch = data[0].shape[0]
@@ -72,9 +77,8 @@ class BaseBuffer(ABC):
                 self.buffer_length = self.memory_pos
     
     @abstractmethod
-    def add(self, state: TensorType[..., "batch"], action: TensorType[..., "batch"],
-            reward: TensorType[..., "batch"], next_state: TensorType[..., "batch"],
-            done: TensorType[..., "batch", torch.uint8]) -> None:
+    def add(self, state: np.ndarray, action: np.ndarray, reward: np.ndarray, next_state: np.ndarray,
+            done: np.ndarray) -> None:
         """
         Add a new experience to memory.
         :param state: current state
@@ -116,9 +120,8 @@ class ReplayBuffer(BaseBuffer):
                                       ("next_state", object), ("done", object)])
     
     @typechecked
-    def add(self, state: TensorType[..., "batch"], action: TensorType[..., "batch"],
-            reward: TensorType[..., "batch"], next_state: TensorType[..., "batch"],
-            done: TensorType[..., "batch", torch.uint8]) -> None:
+    def add(self, state: np.ndarray, action: np.ndarray, reward: np.ndarray, next_state: np.ndarray,
+            done: np.ndarray) -> None:
         self._add_to_buffer((state, action, reward, next_state, done))
     
     @typechecked
@@ -157,11 +160,10 @@ class ProportionalUpdateVariant(BaseUpdateVariant):
     
     @typechecked
     def update(self, loss: TensorType["batch", torch.float32],
-               samples_id: TensorType["batch", torch.long], priorities: TensorType[torch.float32]) \
+               samples_id: TensorType["batch", torch.long], priorities: np.ndarray) \
             -> None:
         # priorities[samples_id] = torch.abs(loss) + self.constant
-        with torch.no_grad():
-            priorities[samples_id] = torch.abs(loss) + self.constant
+        priorities[samples_id.cpu()] = (torch.abs(loss) + self.constant).detach().cpu().numpy()
 
 
 class RankedUpdateVariant(BaseUpdateVariant):
@@ -196,65 +198,75 @@ class PrioritizedReplayBuffer(BaseBuffer):
         
         self.memory_pos = 0
         self.buffer_length = 0
-        self.priorities = torch.zeros(buffer_size, dtype=torch.float32, device=device,
-                                      requires_grad=False)
-        self.memory = np.empty(buffer_size,
-                               dtype=[("state", torch.Tensor), ("action", torch.Tensor),
-                                      ("reward", torch.Tensor), ("next_state", torch.Tensor),
-                                      ("done", torch.Tensor)])
+        
+        self.priorities = np.memmap('/tmp/priorities.dat', mode='w+', dtype=np.float32,
+                                    shape=(buffer_size,))
+        self.rewards = np.memmap('/tmp/rewards.dat', mode='w+', dtype=np.float32,
+                                 shape=(buffer_size,))
+        self.dones = np.memmap('/tmp/dones.dat', mode='w+', dtype=np.uint8, shape=(buffer_size,))
+        self.actions = np.memmap('/tmp/actions.dat', mode='w+', dtype=np.long, shape=(buffer_size,))
+        self.states = None
+        self.next_states = None
+        
         self.rng = np.random.Generator(np.random.PCG64(seed=seed))
         
         self.alpha = alpha
         self.probabilities = torch.tensor([], requires_grad=False)
     
-    def _add_to_buffer(self, data: Collection[TensorType], priorities: TensorType[torch.float32]) \
-            -> None:
-        data = [datum.T for datum in data]
+    def __getitem__(self, item):
+        return (self.states[item], self.actions[item], self.rewards[item], self.next_states[
+            item], self.dones[item])
+    
+    def _add_to_buffer(self, data: Collection[np.ndarray]) -> None:
+        state, action, reward, next_state, done, priorities = data
         
-        data_batch = data[0].shape[0]
+        data_batch = state.shape[-1]
         
         memory_slice = self.memory_pos + data_batch
-        if memory_slice >= self.buffer_size:
-            diff = self.buffer_size - self.memory_pos
-            self.priorities[self.memory_pos:] = priorities[:diff]
-            self.memory[self.memory_pos:] = [dat for dat in zip(*(datum[:diff] for datum in data))]
-            
-            self.memory[:data_batch - diff] = [dat for dat in
-                                               zip(*(datum[diff:] for datum in data))]
-            self.priorities[:data_batch - diff] = priorities[diff:]
-            
-            self.memory_pos = diff
-            self.buffer_length = self.buffer_size
         
-        else:
-            self.memory[self.memory_pos:memory_slice] = [dat for dat in zip(*data)]
-            self.priorities[self.memory_pos:memory_slice] = priorities
-            self.memory_pos = memory_slice % self.buffer_size
-            if self.buffer_length != self.buffer_size:
-                self.buffer_length = self.memory_pos
+        def input_experiences(arr, input_data):
+            if memory_slice >= self.buffer_size:
+                diff = self.buffer_size - self.memory_pos
+                arr[self.memory_pos:] = input_data[:diff]
+                arr[:data_batch - diff] = input_data[diff:]
+            else:
+                arr[self.memory_pos:memory_slice] = input_data
+        
+        input_experiences(self.states, np.moveaxis(state, -1, 0))
+        input_experiences(self.rewards, reward)
+        input_experiences(self.actions, action)
+        input_experiences(self.next_states, np.moveaxis(next_state, -1, 0))
+        input_experiences(self.dones, done)
+        input_experiences(self.priorities, priorities)
+        
+        self.memory_pos = memory_slice % self.buffer_size
+        self.buffer_length = min(self.buffer_length + data_batch, self.buffer_size)
     
     @typechecked
-    def add(self, state: TensorType[..., "batch"], action: TensorType[..., "batch"],
-            reward: TensorType[..., "batch"], next_state: TensorType[..., "batch"],
-            done: TensorType[..., "batch", torch.uint8]) -> None:
-        if self.memory_pos != 0:
-            priority = self.priorities.max().item()
+    def add(self, state: np.ndarray, action: np.ndarray, reward: np.ndarray, next_state: np.ndarray,
+            done: np.ndarray) -> None:
+        if self.buffer_length != 0:
+            priority = self.priorities.max()
         else:
             priority = 1
+            self.states = np.memmap('/tmp/states.dat', dtype=np.uint8, mode='w+',
+                                    shape=(self.buffer_size, *state.shape[:-1]))
+            self.next_states = np.memmap('/tmp/next_states.dat', dtype=np.uint8, mode='w+',
+                                         shape=(self.buffer_size, *state.shape[:-1]))
         
-        priority = torch.full_like(reward, priority)
-        self._add_to_buffer((state.cpu(), action, reward, next_state.cpu(), done), priority)
+        self._add_to_buffer((state, action, reward, next_state, done, np.array([priority])))
     
     @typechecked
     def sample(self) -> Tuple[
         TensorType[..., "batch"], TensorType[..., "batch"], TensorType[..., "batch"], TensorType[
             ..., "batch"], TensorType[..., "batch", torch.uint8], TensorType[
             ..., "batch", torch.long]]:
-        p_i = self.priorities[:self.buffer_length].pow(self.alpha.value())
-        self.probabilities = (p_i / torch.sum(p_i)).to(self.device)
+        p_i = torch.from_numpy(self.priorities[:self.buffer_length]).to(self.device).pow(
+                self.alpha.value())
+        self.probabilities = (p_i / torch.sum(p_i))
         
         samples_id = torch.multinomial(self.probabilities, self.batch_size, replacement=False)
-        samples = self.memory[samples_id.cpu()]
+        samples = self[samples_id.cpu()]
         
         states, actions, rewards, next_states, dones = unpack_samples(samples, self.device)
         

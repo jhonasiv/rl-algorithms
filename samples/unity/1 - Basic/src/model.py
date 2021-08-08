@@ -2,7 +2,7 @@ from torch import nn
 from torchtyping import TensorType, patch_typeguard
 from typeguard import typechecked
 
-from rlalgs import DQNModel
+from src import DQNModel
 
 patch_typeguard()
 
