@@ -96,9 +96,9 @@ class PrioritizedLearningStrategy(BaseLearningStrategy):
     
     def learn(self, experiences: Collection[Experience], estimation_strategy: BaseEstimatorStrategy,
               q_target: BaseDQNModel, q_local: BaseDQNModel, policy: BasePolicy,
-              optimizer: torch.optim.Optimizer, gamma: float, episode: int) -> None:
-        beta = self.beta.step(episode)
-        self.alpha.step(episode)
+              optimizer: torch.optim.Optimizer, gamma: float, time_step: int) -> None:
+        beta = self.beta.step(time_step)
+        self.alpha.step(time_step)
         states, actions, rewards, next_states, dones, samples_id = experiences
         
         target_estimate, local_estimate = estimation_strategy.estimate(q_target=q_target,

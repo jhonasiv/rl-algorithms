@@ -36,6 +36,7 @@ class BaseAgent(abc.ABC):
     gamma: float = 0.99  # discount factor
     tau: float = 1e-3  # step-size for soft updating the target network
     learning_threshold: int = 0  # after which step to start learning
+    sampling_rate: int = 1  # rate to sample experiences
     time_step: int = field(init=False, default=0)  # current time step
     batch_size: int = field(init=False, default=64)  # experience memory batch size
     q_local: BaseDQNModel = field(init=False, default=None)  # local/online network
@@ -70,7 +71,7 @@ class BaseAgent(abc.ABC):
         
         :param path: saved model path
         """
-        torch.save(self.q_local.parameters(), path)
+        torch.save(self.q_local.state_dict(), path)
     
     @typechecked
     def set_optimizer(self, optimizer_cls: Type[torch.optim.Optimizer], lr: float) -> None:
@@ -179,7 +180,7 @@ class DQNetAgent(BaseAgent):
             self.episode += 1
         # Learn every update_every time steps
         self.time_step += states.shape[-1]
-        if self.time_step > self.learning_threshold:
+        if self.time_step > self.learning_threshold and self.time_step % self.sampling_rate:
             # Check if there are enough samples in memory, if so, get a sample and learn from it
             if len(self.memory) > self.batch_size:
                 experiences = self.memory.sample()
@@ -191,7 +192,7 @@ class DQNetAgent(BaseAgent):
                                      estimation_strategy=self.estimation_strategy,
                                      q_target=self.q_target, q_local=self.q_local,
                                      optimizer=self.optimizer, gamma=self.gamma,
-                                     episode=self.episode)
+                                     time_step=self.time_step)
         
         # Update the target network
         if self.time_step % self.update_every == 0:
@@ -229,7 +230,8 @@ class InvalidParameters(Exception):
 
 
 def make_agent(seed: int, update_every: int, gamma: float, tau: float, device: torch.device,
-               learning_threshold: int, optimizer_cls: Type[torch.optim.Optimizer], lr: float,
+               learning_threshold: int, sampling_rate: int,
+               optimizer_cls: Type[torch.optim.Optimizer], lr: float,
                policy: BaseEpsilonGreedyPolicy, model: BaseDQNModel, double_dqn: bool = False,
                prioritized_replay_buffer: bool = False, replay_buffer_args: dict = None) -> \
         DQNetAgent:
@@ -286,7 +288,7 @@ def make_agent(seed: int, update_every: int, gamma: float, tau: float, device: t
                                           False: DQNLearningStrategy}, }
     
     agent = DQNetAgent(seed=seed, update_every=update_every, gamma=gamma, tau=tau, device=device,
-                       learning_threshold=learning_threshold)
+                       learning_threshold=learning_threshold, sampling_rate=sampling_rate)
     estimator = options_mapping['double_dqn'][double_dqn]
     agent.set_estimator(estimator())
     

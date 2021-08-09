@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
         name="rlalgs",
-        version="0.0.6.2-dev3",
+        version="0.0.6.3.2",
         author="Jhonas Prado Moura",
         author_email="jhonaspradomoura@gmail.com",
         description="A RL algorithms API",
