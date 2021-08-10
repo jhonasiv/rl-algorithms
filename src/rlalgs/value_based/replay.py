@@ -182,8 +182,8 @@ class RankedUpdateVariant(BaseUpdateVariant):
 class PrioritizedReplayBuffer(BaseBuffer):
     @typechecked
     def __init__(self, batch_size: int, buffer_size: int, seed: int, device: torch.device,
-                 alpha: BaseFunction, update_variant: BaseUpdateVariant, memmaping: bool,
-                 memmap_path: str):
+                 alpha: BaseFunction, update_variant: BaseUpdateVariant, memmaping: bool=False,
+                 memmap_path: str=''):
         """
         Prioritized replay buffer constructor
         
