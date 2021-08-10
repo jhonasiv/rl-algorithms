@@ -56,32 +56,42 @@ class BaseAgent(abc.ABC):
         self.rng = np.random.Generator(np.random.PCG64(seed=self.seed))
     
     @typechecked
-    def load(self, path: str) -> None:
+    def load(self, path: str, load_target: bool = False) -> None:
         """
         Load previously trained model.
         
+        :param load_target: load target network
         :param path: model path
         """
         self.q_local.load_state_dict(torch.load(path))
+        self.q_target.load_state_dict(torch.load(f"{path.split('.')[0]}_target.pth"))
     
     @typechecked
-    def save(self, path: str) -> None:
+    def save(self, path: str, save_target: bool = False) -> None:
         """
         Save trained model.
         
+        :param save_target: save target network
         :param path: saved model path
         """
         torch.save(self.q_local.state_dict(), path)
+        if save_target:
+            target_path = f"{path.split('.')[0]}_target.pth"
+            torch.save(self.q_target.state_dict(), target_path)
     
     @typechecked
-    def set_optimizer(self, optimizer_cls: Type[torch.optim.Optimizer], lr: float) -> None:
+    def set_optimizer(self, optimizer_cls: Type[torch.optim.Optimizer],
+                      optimizer_args: tuple = tuple(),
+                      optimizer_kwargs: dict = dict()) -> None:
         """
         Sets the training optimizer
         
+        :param optimizer_args: optimizer positional arguments
         :param optimizer_cls: new training optimizer class
-        :param lr: learning rate
+        :param optimizer_kwargs: optimizer keyword arguments
         """
-        self.optimizer = optimizer_cls(self.q_local.parameters(), lr)
+        self.optimizer = optimizer_cls(self.q_local.parameters(), *optimizer_args,
+                                       **optimizer_kwargs)
     
     @typechecked
     def set_model(self, model: BaseDQNModel) -> None:
@@ -231,9 +241,10 @@ class InvalidParameters(Exception):
 
 def make_agent(seed: int, update_every: int, gamma: float, tau: float, device: torch.device,
                learning_threshold: int, sampling_rate: int,
-               optimizer_cls: Type[torch.optim.Optimizer], lr: float,
+               optimizer_cls: Type[torch.optim.Optimizer],
                policy: BaseEpsilonGreedyPolicy, model: BaseDQNModel, double_dqn: bool = False,
-               prioritized_replay_buffer: bool = False, replay_buffer_args: dict = None) -> \
+               prioritized_replay_buffer: bool = False, replay_buffer_args: dict = None,
+               optimizer_args: tuple = tuple(), optimizer_kwargs: dict = {}) -> \
         DQNetAgent:
     """
     This function yields an agent object with the selected input parameters.
@@ -250,6 +261,8 @@ def make_agent(seed: int, update_every: int, gamma: float, tau: float, device: t
     
     
     
+    :param optimizer_args: optimizer positional arguments
+    :param optimizer_kwargs: optimizer keyword arguments
     :param learning_threshold: which time step to start learning
     :param device:  device to host tensors
     :param state_size: size of each state in the state space
@@ -297,7 +310,8 @@ def make_agent(seed: int, update_every: int, gamma: float, tau: float, device: t
     
     agent.set_model(model)
     
-    agent.set_optimizer(optimizer_cls=optimizer_cls, lr=lr)
+    agent.set_optimizer(optimizer_cls=optimizer_cls, optimizer_args=optimizer_args,
+                        optimizer_kwargs=optimizer_kwargs)
     
     agent.set_policy(policy)
     return agent

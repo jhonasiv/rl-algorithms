@@ -110,7 +110,7 @@ class StackFrame(gym.ObservationWrapper):
         return self.observation(self.env.reset())
     
     def observation(self, observation):
-        slices = [ slice(None, None) for _ in self.observation_space.shape ]
+        slices = [slice(None, None) for _ in self.observation_space.shape]
         move_old_slice = move_new_slice = slices
         move_old_slice[self.stack_axis] = slice(None, -1)
         move_new_slice[self.stack_axis] = slice(1, None)
@@ -118,3 +118,18 @@ class StackFrame(gym.ObservationWrapper):
         self.buffer[tuple(move_old_slice)] = self.buffer[tuple(move_new_slice)]
         self.buffer[tuple(set_slice)] = observation.squeeze()
         return self.buffer.astype(dtype=self.observation_space.dtype)
+
+
+class NoopReset(gym.Wrapper):
+    def __init__(self, env, max_noops: int):
+        super().__init__(env)
+        self.max_noops = max_noops
+    
+    def reset(self, **kwargs):
+        self.env.reset(**kwargs)
+        noops = self.env.unwrapped.np_random.randint(1, self.max_noops + 1)
+        for _ in range(noops):
+            obs, _, done, _ = self.env.step(0)
+            if done:
+                self.env.reset(**kwargs)
+        return obs

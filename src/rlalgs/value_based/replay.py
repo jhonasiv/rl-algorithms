@@ -43,7 +43,10 @@ def unpack_samples(samples: Tuple[np.ndarray, ...], device: torch.device) -> Tup
 
 
 class BaseBuffer(ABC):
-    def __init__(self, batch_size, buffer_size, seed, device):
+    def __init__(self, batch_size, buffer_size, seed, device, memmaping: bool = False,
+                 memmap_path: str = ''):
+        self.memmaping = memmaping
+        self.memmap_path = memmap_path
         random.seed(seed)
         self.batch_size = batch_size
         self.buffer_size = buffer_size
@@ -179,7 +182,8 @@ class RankedUpdateVariant(BaseUpdateVariant):
 class PrioritizedReplayBuffer(BaseBuffer):
     @typechecked
     def __init__(self, batch_size: int, buffer_size: int, seed: int, device: torch.device,
-                 alpha: BaseFunction, update_variant: BaseUpdateVariant):
+                 alpha: BaseFunction, update_variant: BaseUpdateVariant, memmaping: bool,
+                 memmap_path: str):
         """
         Prioritized replay buffer constructor
         
@@ -190,7 +194,7 @@ class PrioritizedReplayBuffer(BaseBuffer):
         :param alpha: prioritization exponent
         :param update_variant: priorities update method
         """
-        super().__init__(batch_size, buffer_size, seed, device)
+        super().__init__(batch_size, buffer_size, seed, device, memmaping, memmap_path)
         self.update_variant = update_variant
         self.batch_size = batch_size
         self.buffer_size = buffer_size
@@ -199,15 +203,23 @@ class PrioritizedReplayBuffer(BaseBuffer):
         self.memory_pos = 0
         self.buffer_length = 0
         
-        self.priorities = np.memmap('/tmp/priorities.dat', mode='w+', dtype=np.float32,
-                                    shape=(buffer_size,))
-        self.rewards = np.memmap('/tmp/rewards.dat', mode='w+', dtype=np.float32,
-                                 shape=(buffer_size,))
-        self.dones = np.memmap('/tmp/dones.dat', mode='w+', dtype=np.uint8, shape=(buffer_size,))
-        self.actions = np.memmap('/tmp/actions.dat', mode='w+', dtype=np.long, shape=(buffer_size,))
+        if self.memmaping:
+            self.priorities = np.memmap(f'{memmap_path}/priorities.dat', mode='w+',
+                                        dtype=np.float32,
+                                        shape=(buffer_size,))
+            self.rewards = np.memmap(f'{memmap_path}/rewards.dat', mode='w+', dtype=np.float32,
+                                     shape=(buffer_size,))
+            self.dones = np.memmap(f'{memmap_path}/dones.dat', mode='w+', dtype=np.uint8,
+                                   shape=(buffer_size,))
+            self.actions = np.memmap(f'{memmap_path}/actions.dat', mode='w+', dtype=np.long,
+                                     shape=(buffer_size,))
+        else:
+            self.priorities = np.zeros((buffer_size,), dtype=np.float32)
+            self.rewards = np.zeros((buffer_size,), dtype=np.float32)
+            self.dones = np.zeros((buffer_size,), dtype=np.uint8)
+            self.actions = np.zeros((buffer_size,), dtype=np.long)
         self.states = None
         self.next_states = None
-        
         self.rng = np.random.Generator(np.random.PCG64(seed=seed))
         
         self.alpha = alpha
@@ -232,12 +244,21 @@ class PrioritizedReplayBuffer(BaseBuffer):
             else:
                 arr[self.memory_pos:memory_slice] = input_data
         
-        input_experiences(self.states, np.moveaxis(state, -1, 0))
+        state = np.moveaxis(state, -1, 0)
+        cached_state = self.next_states[self.memory_pos - data_batch: self.memory_pos]
+        if np.all(state == cached_state) and self.memory_pos != 0:
+            input_experiences(self.states, cached_state)
+        else:
+            input_experiences(self.states, state)
+        next_state = np.moveaxis(next_state, -1, 0)
         input_experiences(self.rewards, reward)
         input_experiences(self.actions, action)
-        input_experiences(self.next_states, np.moveaxis(next_state, -1, 0))
+        input_experiences(self.next_states, next_state)
         input_experiences(self.dones, done)
         input_experiences(self.priorities, priorities)
+        
+        input_experiences(self.next_states, np.arange(self.memory_pos, memory_slice))
+        input_experiences(self.next_states, next_state)
         
         self.memory_pos = memory_slice % self.buffer_size
         self.buffer_length = min(self.buffer_length + data_batch, self.buffer_size)
@@ -249,10 +270,16 @@ class PrioritizedReplayBuffer(BaseBuffer):
             priority = self.priorities.max()
         else:
             priority = 1
-            self.states = np.memmap('/tmp/states.dat', dtype=np.uint8, mode='w+',
-                                    shape=(self.buffer_size, *state.shape[:-1]))
-            self.next_states = np.memmap('/tmp/next_states.dat', dtype=np.uint8, mode='w+',
-                                         shape=(self.buffer_size, *state.shape[:-1]))
+            if self.memmaping:
+                self.states = np.memmap(f'{self.memmap_path}/states.dat', dtype=np.uint8, mode='w+',
+                                        shape=(self.buffer_size, *state.shape[:-1]))
+                self.next_states = np.memmap(f'{self.memmap_path}/next_states.dat',
+                                             dtype=np.uint8, mode='w+',
+                                             shape=(self.buffer_size, *state.shape[:-1]))
+            else:
+                self.states = np.zeros((self.buffer_size, *state.shape[:-1]), dtype=state.dtype)
+                self.next_states = np.zeros((self.buffer_size, *next_state.shape[:-1]),
+                                            dtype=next_state.dtype)
         
         self._add_to_buffer((state, action, reward, next_state, done, np.array([priority])))
     
