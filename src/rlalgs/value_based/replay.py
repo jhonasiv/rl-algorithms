@@ -182,8 +182,8 @@ class RankedUpdateVariant(BaseUpdateVariant):
 class PrioritizedReplayBuffer(BaseBuffer):
     @typechecked
     def __init__(self, batch_size: int, buffer_size: int, seed: int, device: torch.device,
-                 alpha: BaseFunction, update_variant: BaseUpdateVariant, memmaping: bool=False,
-                 memmap_path: str=''):
+                 alpha: BaseFunction, update_variant: BaseUpdateVariant, memmaping: bool = False,
+                 memmap_path: str = ''):
         """
         Prioritized replay buffer constructor
         
@@ -237,7 +237,7 @@ class PrioritizedReplayBuffer(BaseBuffer):
         memory_slice = self.memory_pos + data_batch
         
         def input_experiences(arr, input_data):
-            if memory_slice >= self.buffer_size:
+            if memory_slice > self.buffer_size:
                 diff = self.buffer_size - self.memory_pos
                 arr[self.memory_pos:] = input_data[:diff]
                 arr[:data_batch - diff] = input_data[diff:]

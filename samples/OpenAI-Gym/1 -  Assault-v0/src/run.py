@@ -59,9 +59,10 @@ def train(env: gym.Env, agent: BaseAgent, num_steps: int, render: bool, eval_rat
                 yield
         cumulative_score.append(ep_score)
         episodes += 1
-        print(f'Steps {steps}/{num_steps}:\t Last Score: {ep_score}\t '
-              f'Moving Average (100 last eps.): {np.mean(cumulative_score[-100:]):.2f}\tBest '
-              f'Score: {np.max(cumulative_score)}')
+        if episodes % 10 == 0:
+            print(f'Episode {episodes}\t Steps {steps}/{num_steps}:\t Last Score: {ep_score}\t '
+                  f'Moving Average (100 last eps.): {np.mean(cumulative_score[-100:]):.2f}\tBest '
+                  f'Score: {np.max(cumulative_score)}')
         if steps >= num_steps:
             break
     agent.save("../ckpt/ckpt.pth")
