@@ -31,7 +31,7 @@ def evaluate(env: gym.Env, agent: BaseAgent, num_frames: int, render: bool, best
             ep_score += reward
             n += 1
         cumulative_score.append(ep_score)
-    result = np.sum(cumulative_score)
+    result = np.mean(cumulative_score)
     print(f'Evaluated the agent`s performance with:\n\t Result: {result}\tBest Result so far: {best_result}')
     if result > best_result:
         agent.save(f'../ckpt/agent_{eval_step}.pth', True)
@@ -112,7 +112,7 @@ def run(seed, update_every, gamma, tau, lr, batch_size, render, gpu, buffer_size
     train_gen = train(env, agent, num_steps, render, eval_rate=eval_rate)
     best_result = 0
     for eval_step, _ in enumerate(train_gen):
-        result = evaluate(env, agent, num_frames=10000, render=True, best_result=best_result,
+        result = evaluate(env, agent, num_frames=10000, render=render, best_result=best_result,
                           eval_step=eval_step)
         best_result = max(result, best_result)
 

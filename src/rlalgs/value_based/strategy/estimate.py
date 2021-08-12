@@ -73,11 +73,11 @@ class DoubleDQNEstimatorStrategy(BaseEstimatorStrategy):
         # sample. If the episode is terminal, the action-value is the reward
         #dones = dones.repeat((1, greedy_value.shape[1])).unsqueeze(2)
         #rewards = rewards.repeat((1, greedy_value.shape[1])).unsqueeze(2)
-        target_values = q_target(next_states).gather(-1, local_actions)
+        target_values = q_target(next_states).gather(0, local_actions)
         target_estimate = rewards + gamma * target_values * (1 - dones)
         
         # Get the estimates for the local network and gather the action-value for each action
         # taken in the sample.
         actions = actions.unsqueeze(0)
-        local_estimate = q_local(states).gather(-1, actions)
+        local_estimate = q_local(states).gather(0, actions)
         return target_estimate, local_estimate
